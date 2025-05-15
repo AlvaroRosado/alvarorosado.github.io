@@ -119,10 +119,10 @@ comments:
     issue_term: # < url | pathname | title | ...>
   # Giscus options › https://giscus.app
   giscus:
-    repo: # <gh-username>/<repo>
-    repo_id:
-    category:
-    category_id:
+    repo: AlvaroRosado/alvarorosado.es-comments
+    repo_id: R_kgDOOqnt0A
+    category: Announcements
+    category_id: DIC_kwDOOqnt0M4CqL1O
     mapping: # optional, default to 'pathname'
     strict: # optional, default to '0'
     input_position: # optional, default to 'bottom'
