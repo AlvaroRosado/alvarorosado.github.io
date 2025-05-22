@@ -122,7 +122,6 @@ El encargado usa una fórmula matemática simple: toma la etiqueta, la convierte
 Esto es genial porque:
 - Todos los documentos del cliente "12345" van al mismo cajón
 - Siempre están en orden cronológico
-- El mismo contable los procesa siempre
 
 ### La regla de oro del orden
 
@@ -130,9 +129,9 @@ Esto es genial porque:
 
 Si necesitas que todos los mensajes estén ordenados globalmente, tendrás que usar un solo cajón... pero entonces solo un consumidor podrá procesarlos. Es el trade-off entre orden y velocidad.
 
-### El equilibrio perfecto
+### La fórmula mágica
 
-Recuerda esta fórmula mágica:
+Recuerda esto:
 **Número de particiones = Número máximo de consumidores en paralelo**
 
 - Más particiones = más paralelismo = más velocidad
@@ -144,15 +143,9 @@ Recuerda esta fórmula mágica:
 
 Nuestro almacén no puede crecer infinitamente. El encargado tiene dos estrategias de limpieza:
 
-### Estrategia por tiempo
-"Los documentos más antiguos de X días se destruyen automáticamente"
+**Retention Time (limpieza por tiempo):** "Los documentos más antiguos de X días se destruyen automáticamente" En Kafka esto se configura con `retention.ms`. Es perfecto para logs, eventos, o cualquier cosa donde solo necesites un historial temporal. Por ejemplo, puedes configurar que los logs se mantengan por 7 días y después se eliminen automáticamente.
 
-Perfecto para logs, eventos, o cualquier cosa donde necesites un historial temporal.
-
-### Estrategia por clave
-"Solo me quedo con la última versión de cada etiqueta"
-
-Ideal para estados: el último precio de un producto, la última ubicación de un vehículo, el último estado de un pedido.
+**Log Compaction (limpieza por clave):** "Solo me quedo con la última versión de cada etiqueta" Esta es más inteligente. El encargado revisa todos los documentos con la misma etiqueta y solo conserva el más reciente. En Kafka se activa con `cleanup.policy=compact`. Es ideal para estados: el último precio de un producto, la última ubicación de un vehículo, el último estado de un pedido.
 
 ---
 
@@ -169,13 +162,13 @@ Ideal para estados: el último precio de un producto, la última ubicación de u
 - Piensa en tu pico máximo de consumidores
 
 ### 3. No abuses de los topics
-- Un topic por tipo de evento/mensaje
+- Un topic por concepto en tu dominio.
 - No mezcles conceptos diferentes en el mismo topic
 - Nombres descriptivos y consistentes
 
 ### 4. Maneja las versiones de tus mensajes
 - Los mensajes cambiarán de formato con el tiempo
-- Usa herramientas como Avro o Protobuf para versionado
+- Usa herramientas como Schema Registry + Avro o Protobuf para versionado
 - Piensa en compatibilidad hacia atrás y hacia adelante
 
 ---
@@ -215,10 +208,10 @@ Ideal para estados: el último precio de un producto, la última ubicación de u
 
 ## 🏁 Conclusión
 
-Kafka no es magia negra. Es simplemente **un almacén muy bien organizado** que permite que tus aplicaciones se comuniquen de forma eficiente, ordenada y confiable.
+Kafka no es magia negra. Es simplemente **un almacén muy bien organizado** que permite que tus aplicaciones se comuniquen de forma eficiente y confiable.
 
-La próxima vez que alguien mencione Kafka, ya no tendrás que asentir sin entender. Sabrás exactamente de qué están hablando y podrás participar en la conversación como un experto.
+La próxima vez que alguien mencione Kafka en una reunión, ya no vas a tener que asentir fingiendo que entiendes. Vas a saber exactamente de qué están hablando.
 
-¿Listo para implementar Kafka en tu próximo proyecto? 
+Y si te toca implementarlo, ya tienes una base sólida para empezar. Solo recuerda: piensa en el almacén, visualiza los cajones, y todo va a tener sentido.
 
 ---
