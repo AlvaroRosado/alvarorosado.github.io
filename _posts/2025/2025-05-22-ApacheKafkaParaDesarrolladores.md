@@ -1,6 +1,6 @@
 ---
 title: Apache Kafka para desarrolladores
-date: 2025-05-19 15:43:00 -0600
+date: 2025-05-22 15:43:00 -0600
 categories: [EventArchitecture]
 tags: []
 toc: true
