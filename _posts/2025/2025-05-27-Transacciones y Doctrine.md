@@ -1,6 +1,6 @@
 ---
 title: Transacciones
-date: 2025-05-21 15:43:00 -0600
+date: 2025-05-27 17:03:00 -0600
 categories: [Database]
 tags: []
 toc: true
