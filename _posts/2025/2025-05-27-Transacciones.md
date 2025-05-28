@@ -569,12 +569,19 @@ SELECT * FROM performance_schema.data_locks
 WHERE lock_type = 'GAP' OR lock_type = 'REC_NOT_GAP';
 
 -- Ver locks en espera (deadlock detection)
-SELECT 
-    requesting_engine_transaction_id,
-    requesting_thread_id,
-    blocking_engine_transaction_id,
-    blocking_thread_id
-FROM performance_schema.data_lock_waits;
+SELECT
+  r.trx_id waiting_transaction,
+  r.trx_mysql_thread_id waiting_thread,
+  r.trx_query waiting_query,
+  b.trx_id blocking_transaction,
+  b.trx_mysql_thread_id blocking_thread,
+  b.trx_query blocking_query
+FROM
+  information_schema.innodb_lock_waits w
+    JOIN information_schema.innodb_trx b ON
+    b.trx_id = w.blocking_trx_id
+    JOIN information_schema.innodb_trx r ON
+    r.trx_id = w.requesting_trx_id;
 
 -- InnoDB status para análisis detallado
 SHOW ENGINE INNODB STATUS\G
