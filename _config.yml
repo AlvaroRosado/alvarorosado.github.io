@@ -16,7 +16,7 @@ timezone:
 
 title: AlvaroRosado # the main title
 
-tagline: Shipping Product. Writing the Best Code I Can ;). # it will display as the subtitle
+tagline: Shipping Product. Writing the Best Code I Can ;) # it will display as the subtitle
 
 description: >-
   Personal blog of a product-minded software engineer with a focus on clean architecture, domain-driven design, and event-driven systems. Sharing insights on building scalable, maintainable backends with Symfony, Kafka, and modern engineering practices.
