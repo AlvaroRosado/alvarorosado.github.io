@@ -16,10 +16,10 @@ timezone:
 
 title: AlvaroRosado # the main title
 
-tagline: My personal website # it will display as the subtitle
+tagline: Shipping Product. Writing the Best Code I Can ;). # it will display as the subtitle
 
-description: >- # used by seo meta and the atom feed
-  A minimal, responsive and feature-rich Jekyll theme for technical writing.
+description: >-
+  Personal blog of a product-minded software engineer with a focus on clean architecture, domain-driven design, and event-driven systems. Sharing insights on building scalable, maintainable backends with Symfony, Kafka, and modern engineering practices.
 
 # Fill in the protocol & hostname for your site.
 # E.g. 'https://username.github.io', note that it does not end with a '/'.
