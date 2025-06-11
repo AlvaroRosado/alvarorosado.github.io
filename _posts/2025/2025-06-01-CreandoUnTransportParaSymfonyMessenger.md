@@ -1,6 +1,6 @@
 ---
 title: Los problemas de Symfony Messenger con Kafka
-date: 2025-05-21 15:43:00 -0600
+date: 2025-06-11 17:43:00 -0600
 categories: [EventArchitecture, Kafka, Symfony]
 tags: []
 toc: true
