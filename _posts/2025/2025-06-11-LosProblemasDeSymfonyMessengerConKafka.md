@@ -6,8 +6,6 @@ tags: []
 toc: true
 ---
 
-# Los problemas de Symfony Messenger con Kafka
-
 Después de pelearme durante mucho tiempo y en varias empresas, con Apache Kafka y Symfony Messenger en producción, llegué a una conclusión molesta: los transports existentes están diseñados para el problema equivocado.
 
 No es que estén mal programados. Es que Kafka no es una cola de mensajes, y seguimos tratándolo como si lo fuera.
