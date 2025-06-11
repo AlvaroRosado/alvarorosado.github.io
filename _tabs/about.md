@@ -27,3 +27,5 @@ En este blog comparto ideas, aprendizajes y problemas reales que me encuentro mi
 ---
 
 **Disclaimer:** A veces el código sale limpio, a veces solo sale a tiempo.
+
+**Contacto:** alvaro.rosado93@gmail.com
