@@ -1,6 +1,6 @@
 ---
-title: "Software tools"
-slug: "tools"
+title: "Projects"
+slug: "projects"
 layout: "single"
 readingTime: false
 menu:
@@ -9,5 +9,3 @@ menu:
         params: 
             icon: link
 ---
-
-Hide and blur sensitive information on any webpage. Blur your secrets such as personal emails, public IP addresses, and more.
