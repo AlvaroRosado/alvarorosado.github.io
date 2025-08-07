@@ -106,7 +106,7 @@ sequenceDiagram
 
 ## Consejos para investigar y evitar deadlocks
 
-A continuación, se detallan prácticas recomendadas para identificar y mitigar deadlocks en bases de datos. Cada consejo incluye una explicación técnica y un ejemplo práctico.
+A continuación, se detallan prácticas recomendadas para identificar y mitigar deadlocks en bases de datos.
 
 1.  **Reducir la duración de las transacciones** Las transacciones de larga duración mantienen locks activos durante más tiempo, aumentando la probabilidad de deadlocks. Dividir transacciones complejas en unidades más pequeñas reduce el tiempo de retención de locks y minimiza conflictos.
 
