@@ -2,6 +2,7 @@
 title: DeadLocks
 date: 2025-08-07 17:00:00
 categories: [Database]
+slug: dead-locks
 tags: []
 toc: true
 ---
