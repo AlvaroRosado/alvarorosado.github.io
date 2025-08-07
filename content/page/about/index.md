@@ -19,7 +19,7 @@ Trabajo en el diseño e implementación de sistemas backend escalables, principa
 
 Me interesa construir soluciones que no solo funcionen bien, sino que también sean mantenibles, bien diseñadas y pensadas para evolucionar con el negocio. Me gusta cuando la ingeniería se alinea con el propósito del producto.
 
-En este blog comparto ideas, aprendizajes y problemas reales que me encuentro mientras construyo software en producción.
+En este blog comparto ideas, aprendizajes y problemas reales que me encuentro mientras construyo software.
 
 ---
 
