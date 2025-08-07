@@ -12,8 +12,7 @@ Un deadlock (bloqueo mutuo) es una situación en la que dos o más transacciones
 
 Cuando MySQL detecta esta condición, automáticamente elige una de las transacciones como "víctima", la aborta y libera los locks que mantenía, permitiendo que las demás puedan continuar. La transacción abortada recibe el error `ERROR 1213 (40001): Deadlock found when trying to get lock`.
 
-Los deadlocks son prácticamente inevitables en sistemas de bases de datos con alta concurrencia. Sin embargo, su impacto puede minimizarse de forma significativa mediante buenas prácticas de diseño, acceso ordenado a los datos y un monitoreo adecuado.
-
+Los deadlocks son una posibilidad real en sistemas de bases de datos con alta concurrencia, especialmente cuando múltiples transacciones acceden a los mismos recursos. Aunque no son inevitables, sí pueden ser difíciles de evitar por completo en escenarios complejos. Sin embargo, su impacto puede minimizarse significativamente mediante buenas prácticas de diseño, acceso ordenado a los datos y un monitoreo adecuado.
 
 ### Ejemplo con Actualizaciones Cruzadas
 
