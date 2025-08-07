@@ -6,51 +6,46 @@ tags: []
 toc: true
 ---
 
-Después de pelearme durante mucho tiempo y en varias empresas, con Apache Kafka y Symfony Messenger en producción, llegué a una conclusión molesta: los transports existentes están diseñados para el problema equivocado.
+Tras años trabajando con Apache Kafka y Symfony Messenger en entornos de producción, he llegado a una conclusión frustrante: los *transports* actuales de Symfony Messenger no están diseñados para aprovechar al máximo las capacidades de Kafka. No es que estén mal implementados, sino que abordan el problema desde una perspectiva equivocada. Kafka es una plataforma de *streaming* de eventos, no una cola de mensajes como RabbitMQ o Amazon SQS. Sin embargo, Symfony Messenger los trata de forma indistinta, lo que genera fricciones arquitecturales, código complicado y soluciones que no escalan bien.
 
-No es que estén mal programados. Es que Kafka no es una cola de mensajes, y seguimos tratándolo como si lo fuera.
+## El problema de base
 
-## El problema fundamental
+Kafka está diseñado para manejar **eventos en streaming**, mientras que Redis, RabbitMQ o SQS son **colas de mensajes**. Aunque parecen similares, sus propósitos y dinámicas son distintos. Symfony Messenger, al tratar a Kafka como una cola más, introduce problemas que se reflejan en configuraciones redundantes, lógica confusa y un mantenimiento innecesariamente complejo.
 
-Kafka es una plataforma de **streaming de eventos**. Redis, RabbitMQ, Amazon SQS son **colas de mensajes**. Son conceptos diferentes que resuelven problemas diferentes, pero Symfony Messenger los trata igual.
+Imagina un *topic* en Kafka llamado `user_events`, que agrupa todos los eventos relacionados con usuarios: registros, actualizaciones, cambios de plan, eliminaciones, etc. Esto es típico en una arquitectura basada en eventos, donde los eventos relacionados coexisten en un mismo *stream*. Ahora, supongamos que tienes varios servicios:
 
-Esto crea una fricción arquitectural que se manifiesta en código feo, configuraciones duplicadas y soluciones que no escalan.
+- El servicio de facturación solo necesita procesar eventos de tipo `plan_changed`.
+- El servicio de notificaciones solo quiere los eventos `user_registered`.
+- El servicio de analíticas necesita todos los eventos.
 
-Imagínate que tienes un topic llamado `user_events` que contiene todos los eventos relacionados con usuarios: registros, actualizaciones, eliminaciones, cambios de plan, etc. En una arquitectura de eventos real, esto es lo normal. Los eventos relacionados van juntos.
+Con los *transports* actuales de Symfony Messenger, te enfrentas a tres opciones, todas problemáticas:
 
-Pero ahora resulta que tu servicio de facturación solo necesita procesar `plan_changed`, tu servicio de notificaciones solo quiere `user_registered`, y tu servicio de analytics los quiere todos.
+1. **Crear un *transport* por tipo de evento**: Esto lleva a tener decenas de *transports*, cada uno escuchando un *topic* diferente, lo que fragmenta la cohesión del *stream* de eventos.
+2. **Procesar todo y filtrar en el *handler***: El servicio de facturación termina deserializando eventos irrelevantes, como registros de usuarios, lo que es ineficiente y complica la lógica.
+3. **Usar un *transport* genérico con lógica de enrutamiento personalizada**: Esto resulta en código confuso, con lógica de enrutamiento dispersa que se vuelve inmantenible con el tiempo.
 
-Con los transports actuales tienes tres opciones, todas malas:
+## La interoperabilidad y la serialización
 
-1. **Crear un transport por tipo de evento**: Terminas con 150 transports, cada uno escuchando un topic diferente. Pierdes la cohesión de tus streams de eventos.
-2. **Procesar todo y filtrar en el handler**: Tu servicio de facturación tiene que deserializar eventos de registro de usuarios que nunca va a procesar. Ineficiente y ruidoso.
-3. **Crear un transport genérico y hacer malabares**: Acabas con lógica de routing en lugares raros y código que nadie entiende seis meses después.
+Si tu aplicación produce y consume sus propios mensajes, la serialización PHP nativa de Symfony Messenger funciona sin problemas. Sin embargo, cuando varias aplicaciones (incluso si todas usan Symfony) necesitan interoperar, la cosa se complica. La serialización PHP depende de que el consumidor tenga acceso a las mismas clases PHP que generaron el mensaje. Por ejemplo, si el servicio de usuarios produce un evento `App\Event\UserRegistered` y el servicio de facturación intenta deserializarlo, fallará si no tiene esa clase exacta.
 
-## La serialización entre aplicaciones
-
-Si tu aplicación produce y consume sus propios mensajes, la serialización PHP de Symfony funciona perfectamente. El problema aparece cuando necesitas interoperabilidad entre aplicaciones diferentes.
-
-Incluso si son dos aplicaciones Symfony distintas, la serialización PHP se rompe. El serializador necesita tener acceso a las mismas clases PHP que se usaron para crear el mensaje original. Si tu servicio de facturación intenta deserializar un evento que produjo tu servicio de usuarios, va a fallar porque no tiene la clase `App\Event\UserRegistered` del otro servicio.
-
-La serialización JSON parece la solución obvia, pero implementarla bien es más complicado:
+Una solución aparente es usar JSON para serializar los mensajes, pero esto introduce otro problema:
 
 ```php
 // El servicio A produce un evento
 $message = new UserRegistered($userId, $email);
-// Se serializa a JSON... pero ¿cómo sabe el servicio B que es un UserRegistered?
 
-// El mensaje llega al servicio B como JSON genérico
+// Se serializa a JSON, pero...
+// El mensaje llega al servicio B como:
 {"user_id": 123, "email": "test@example.com"}
-// ¿Qué clase instanciar? ¿UserRegistered? ¿UserCreated? ¿UserSignedUp?
+
+// ¿Cómo sabe el servicio B qué clase instanciar? ¿UserRegistered? ¿UserCreated?
 ```
 
-Sin metadatos sobre el tipo de mensaje, el servicio consumidor no puede saber qué hacer con el JSON que recibe.
+Sin metadatos que indiquen el tipo de mensaje, el consumidor no tiene forma de interpretar correctamente el JSON recibido.
 
-## La configuración se multiplica
+## Configuraciones redundantes
 
-En Kafka real (no el que tienes en tu docker-compose local), la configuración es extensa. Autenticación SASL, SSL, configuraciones de performance, timeouts, etc.
-
-Con los transports actuales,  normalmente repites esta configuración en cada transport:
+En un entorno real de Kafka (no en un *docker-compose* local), las configuraciones son extensas: autenticación SASL, SSL, ajustes de rendimiento, *timeouts*, etc. Con los *transports* actuales, estas configuraciones se repiten para cada *transport*, lo que genera duplicación innecesaria:
 
 ```yaml
 user_events:
@@ -62,36 +57,35 @@ user_events:
       sasl.password: "%env(KAFKA_PASS)%"
       auto.offset.reset: earliest
       enable.auto.commit: false
-      # ... 20 líneas más
+      # ... otras 20 líneas de configuración
 
 order_events:
   options:
     config:
-      security.protocol: SASL_SSL  # Otra vez lo mismo
-      sasl.mechanisms: PLAIN
-      sasl.username: "%env(KAFKA_USER)%"
+      security.protocol: SASL_SSL  # Repetido
+      sasl.mechanisms: PLAIN      # Repetido
+      sasl.username: "%env(KAFKA_USER)%"  # Repetido
       # ... las mismas 20 líneas
 ```
 
-Esto es mantenimiento innecesario y fuente de bugs sutiles cuando cambias algo en un transport pero se te olvida en otro.
+Esta repetición no solo es tediosa, sino que también es una fuente de errores sutiles, como olvidar actualizar un parámetro en un *transport* cuando cambias otro.
 
-## Cómo debería funcionar
+## Una solución mejor
 
-Después de demasiadas frustraciones, decidí escribir un transport que funcione como esperarías que funcionara Kafka en Symfony.
+Cansado de estas limitaciones, desarrollé un *transport* personalizado para Symfony Messenger que se alinea mejor con la naturaleza de Kafka.
 
-### Identificación explícita de mensajes
+### Identificación clara de mensajes
 
-Los mensajes pueden llevar un identificador que se almacena en los headers de Kafka:
+Los mensajes incluyen un identificador explícito que se almacena en los *headers* de Kafka:
 
 ```php
-
-class UserRegistered 
+class UserRegistered
 {
     public function __construct(
         public readonly string $userId,
         public readonly string $email
     ) {}
-    
+
     public function identifier(): string
     {
         return 'user_registered';
@@ -99,27 +93,27 @@ class UserRegistered
 }
 ```
 
-Cuando el mensaje llega al consumidor, el transport lee este header y puede mapear automáticamente el JSON a la clase PHP correcta.
+Cuando el mensaje llega al consumidor, el *transport* lee este identificador y mapea automáticamente el JSON a la clase PHP correspondiente.
 
-### Consumo selectivo
+### Consumo selectivo de eventos
 
-Puedes configurar qué tipos de evento procesar del topic. Los que no estén configurados se auto-commitean (se ignoran):
+Puedes especificar qué tipos de eventos procesar desde un *topic*. Los eventos no configurados se ignoran automáticamente (*auto-commit*):
 
 ```yaml
 consumer:
   routing:
-    - name: 'user_registered'
-      class: 'App\Message\UserRegistered'
-    - name: 'plan_changed'
-      class: 'App\Message\PlanChanged'
-  # user_updated, user_deleted, etc. se ignoran automáticamente
+    - name: user_registered
+      class: App\Message\UserRegistered
+    - name: plan_changed
+      class: App\Message\PlanChanged
+    # Otros eventos como user_updated o user_deleted se ignoran
 ```
 
-Esto permite que múltiples servicios consuman el mismo topic procesando subconjuntos diferentes de eventos, sin interferirse entre sí.
+Esto permite que múltiples servicios consuman el mismo *topic*, procesando solo los eventos relevantes sin interferencias.
 
-### Configuración global
+### Configuración centralizada
 
-Las configuraciones de Kafka se definen una vez a nivel global y se heredan:
+Las configuraciones comunes de Kafka se definen una sola vez y se heredan en todos los *transports*:
 
 ```yaml
 # config/packages/event_driven_kafka_transport.yaml
@@ -128,9 +122,9 @@ event_driven_kafka_transport:
     config:
       security.protocol: "%env(KAFKA_SECURITY_PROTOCOL)%"
       sasl.username: "%env(KAFKA_USER)%"
-      # ... toda la configuración común
+      # ... configuración común
 
-# config/packages/messenger.yaml - solo overrides específicos
+# config/packages/messenger.yaml
 framework:
   messenger:
     transports:
@@ -138,25 +132,28 @@ framework:
         options:
           consumer:
             config:
-              group.id: 'billing-service'  # Solo lo específico
+              group.id: billing-service  # Solo configuraciones específicas
 ```
 
-### Multi-topic por defecto
+### Soporte nativo para múltiples *topics*
 
-Puedes producir el mismo evento a múltiples topics sin configuración adicional:
+Puedes enviar un evento a varios *topics* sin configuraciones adicionales:
 
 ```yaml
 options:
-  topics: ['user_events', 'audit_events', 'analytics_events']
+  topics:
+    - user_events
+    - audit_events
+    - analytics_events
 ```
 
-El evento se produce atómicamente a los tres topics.
+El evento se publica atómicamente en todos los *topics* especificados.
 
-## Los detalles técnicos
+## Detalles técnicos
 
-### Sistema de hooks
+### Sistema de *hooks*
 
-Para evitar acoplamiento, el transport usa un sistema de hooks. Implementas una interfaz que se ejecuta antes y después de producir/consumir:
+Para mantener el código desacoplado, el *transport* utiliza *hooks* que se ejecutan antes y después de producir o consumir mensajes:
 
 ```php
 class EventHook implements KafkaTransportHookInterface
@@ -164,44 +161,36 @@ class EventHook implements KafkaTransportHookInterface
     public function beforeProduce(Envelope $envelope): Envelope
     {
         $message = $envelope->getMessage();
-        
         if ($message instanceof Message) {
             return $envelope->with(new KafkaIdentifierStamp($message->identifier()));
         }
-        
         return $envelope;
     }
 }
 ```
 
-El transport detecta automáticamente tu hook (sin configuración de servicios) y lo usa.
+El *transport* detecta automáticamente estos *hooks* sin necesidad de configuraciones adicionales.
 
-### Coexistencia
+### Compatibilidad con configuraciones existentes
 
-Para que puedas probarlo sin romper tu setup actual, usa un DSN diferente:
+Para facilitar la transición, el *transport* usa un DSN diferente, permitiendo que coexista con los *transports* actuales:
 
 ```bash
-# Tu transport actual
+# Transport actual
 KAFKA_DSN=kafka://localhost:9092
 
-# El nuevo transport
+# Nuevo transport
 KAFKA_EVENTS_DSN=ed+kafka://localhost:9092
 ```
 
-Pueden coexistir sin problemas.
+## ¿Vale la pena el esfuerzo?
 
-## ¿Vale la pena?
+Desarrollar un *transport* personalizado requiere tiempo y un conocimiento profundo de Kafka y del código fuente de Symfony Messenger. Además, hay que lidiar con casos extremos que solo aparecen en producción con tráfico real. Entonces, ¿por qué no usar los *transports* existentes y aplicar parches?
 
-Desarrollar un transport custom lleva tiempo. Hay que entender cómo funciona Kafka por dentro, leer el código fuente de Symfony Messenger, y lidiar con edge cases que solo salen a la luz cuando tienes tráfico real.
+Porque los parches se acumulan. Empiezas filtrando eventos en el *handler*, luego duplicas configuraciones, después creas servicios para gestionar el enrutamiento... y terminas con un sistema frágil y difícil de mantener. Con un *transport* bien diseñado, agregar un nuevo tipo de evento se reduce a un par de líneas de configuración, en lugar de una tarde de trabajo y una *pull request* que modifica múltiples archivos.
 
-¿Por qué no simplemente usar uno de los transports existentes y hacer algunos workarounds?
+Cuando el *transport* está bien implementado, se vuelve transparente para el equipo. Los desarrolladores pueden usarlo sin preocuparse por las complejidades internas, lo que acelera el desarrollo y reduce errores.
 
-Porque los workarounds se acumulan. Empiezas con "solo vamos a filtrar estos eventos en el handler", luego "necesitamos duplicar esta configuración en tres sitios", después "vamos a crear un servicio que gestione el routing"... y al final tienes un sistema frankensteinian que nadie del equipo entiende completamente.
+---
 
-La diferencia la notas en velocidad de desarrollo. Con las herramientas correctas, añadir un nuevo tipo de evento son dos líneas de configuración. Con workarounds, es una tarde de trabajo y una pull request que toca cinco archivos diferentes.
-
-Además, una vez que el transport está funcionando, se vuelve invisible. El resto del equipo simplemente lo usa sin pensar en las complejidades internas.
-
-------
-
-*El transport completo está disponible en [GitHub](https://github.com/AlvaroRosado/event-driven-kafka-messenger-transport). Si te encuentras peleándote con los mismos problemas, puede que te ahorre algunos dolores de cabeza.*
+*El código completo del *transport* está disponible en [GitHub](https://github.com/AlvaroRosado/event-driven-kafka-messenger-transport). Si estás lidiando con los mismos problemas, podría ahorrarte muchos dolores de cabeza.*
