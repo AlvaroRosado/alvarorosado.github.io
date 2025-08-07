@@ -53,7 +53,7 @@ UPDATE actor SET last_name = 'PENELOPE' WHERE actor_id = 1;
 
 ```
 
-****Sesión 1 (continúa):**
+**Sesión 1 (Ejecutamos otra query en la misma sesión):**
 
 
 ```sql
