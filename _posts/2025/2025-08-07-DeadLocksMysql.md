@@ -115,10 +115,10 @@ A continuación, se detallan prácticas recomendadas para identificar y mitigar 
   -   **Ejemplo**: Modificando el escenario de la tabla actor para acceder primero a actor_id = 1 y luego a actor_id = 7 en ambas sesiones:
 
 
-3.  **Implementar lógica de reintento en la aplicación** Aunque los deadlocks no siempre se pueden evitar, agregar mecanismos de reintento permite que la aplicación reejecute la transacción abortada automáticamente. Priorice resolver la causa subyacente antes de depender exclusivamente de reintentos.
+3.  **Implementar lógica de reintento en la aplicación** Aunque los deadlocks no siempre se pueden evitar, agregar mecanismos de reintento permite que la aplicación reejecute la transacción abortada automáticamente.
 
 
-4.  **Revisar y ajustar niveles de aislamiento** Niveles de aislamiento altos generan más locks explícitos.
+4.  **Revisar y ajustar niveles de aislamiento transaccional** Niveles de aislamiento altos generan más locks explícitos.
 
 
 5.  **Optimizar con índices adecuados** Consultas sin índices apropiados escanean más registros, estableciendo locks innecesarios. Agregar índices bien diseñados reduce el número de locks y acelera las operaciones.
@@ -129,13 +129,13 @@ A continuación, se detallan prácticas recomendadas para identificar y mitigar 
       `   -- Consulta lenta sin índice
       UPDATE inventario SET stock = stock - 1 WHERE producto_id = 123;       `
       ```
-      Agregue un índice:
+      Si añadimos un índice:
       ```sql
 
       `   CREATE INDEX idx_producto_id ON inventario (producto_id);       `
       ```
 
       Esto limita los locks a filas específicas en lugar de rangos amplios.
-6.  **Minimizar el impacto de locks en operaciones de esquema** Como administrador de bases de datos (DBA), evite operaciones que adquieran locks agresivos durante periodos prolongados.
+6.  **Minimizar el impacto de locks en operaciones de esquema** Evitar operaciones que adquieran locks agresivos durante periodos prolongados.
 
 Estas prácticas, combinadas con monitoreo continuo (por ejemplo, revisando logs de deadlocks en MySQL con SHOW ENGINE INNODB STATUS), ayudan a mitigar deadlocks efectivamente.
