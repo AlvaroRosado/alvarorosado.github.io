@@ -1,0 +1,938 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Álvaro Rosado</title><link>https://alvarorosado.es/</link><description>Recent content on Álvaro Rosado</description><generator>Hugo -- gohugo.io</generator><language>es-Es</language><lastBuildDate>Thu, 07 Aug 2025 17:00:00 +0000</lastBuildDate><atom:link href="https://alvarorosado.es/index.xml" rel="self" type="application/rss+xml"/><item><title>DeadLocks</title><link>https://alvarorosado.es/posts/2025-08-07-deadlocksmysql/</link><pubDate>Thu, 07 Aug 2025 17:00:00 +0000</pubDate><guid>https://alvarorosado.es/posts/2025-08-07-deadlocksmysql/</guid><description>&lt;h2 id="qué-es-un-deadlock">&lt;a href="#qu%c3%a9-es-un-deadlock" class="header-anchor">&lt;/a>¿Qué es un Deadlock?
+&lt;/h2>&lt;p>Un deadlock (bloqueo mutuo) es una situación en la que dos o más transacciones se bloquean mutuamente al intentar acceder a recursos que están siendo utilizados por las otras transacciones. Esto genera un ciclo de espera en el que ninguna puede continuar, ya que cada una espera que la otra libere los recursos que necesita.&lt;/p>
+&lt;p>Cuando MySQL detecta esta condición, automáticamente elige una de las transacciones como &amp;ldquo;víctima&amp;rdquo;, la aborta y libera los locks que mantenía, permitiendo que las demás puedan continuar. La transacción abortada recibe el error &lt;code>ERROR 1213 (40001): Deadlock found when trying to get lock&lt;/code>.&lt;/p>
+&lt;p>Los deadlocks son una posibilidad real en sistemas de bases de datos con alta concurrencia, especialmente cuando múltiples transacciones acceden a los mismos recursos. Aunque no son inevitables, sí pueden ser difíciles de evitar por completo en escenarios complejos. Sin embargo, su impacto puede minimizarse significativamente mediante buenas prácticas de diseño, acceso ordenado a los datos y un monitoreo adecuado.&lt;/p>
+&lt;h3 id="ejemplo-con-actualizaciones-cruzadas">&lt;a href="#ejemplo-con-actualizaciones-cruzadas" class="header-anchor">&lt;/a>Ejemplo con Actualizaciones Cruzadas
+&lt;/h3>&lt;p>Consideremos una tabla de ejemplo para ilustrar un escenario típico de deadlock:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">CREATE&lt;/span> &lt;span style="color:#66d9ef">TABLE&lt;/span> actor (
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> actor_id INT &lt;span style="color:#66d9ef">PRIMARY&lt;/span> &lt;span style="color:#66d9ef">KEY&lt;/span>,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> first_name VARCHAR(&lt;span style="color:#ae81ff">50&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> last_name VARCHAR(&lt;span style="color:#ae81ff">50&lt;/span>)
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> actor &lt;span style="color:#66d9ef">VALUES&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>(&lt;span style="color:#ae81ff">1&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;PENELOPE&amp;#39;&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;GUINESS&amp;#39;&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>(&lt;span style="color:#ae81ff">7&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;GRACE&amp;#39;&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;MOSTEL&amp;#39;&lt;/span>);
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Sesión 1:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">START&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> actor &lt;span style="color:#66d9ef">SET&lt;/span> first_name &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;GUINESS&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> actor_id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">1&lt;/span>; &lt;span style="color:#75715e">-- Adquiere un lock exclusivo en la fila actor_id = 1`
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Sesión 2:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">START&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> actor &lt;span style="color:#66d9ef">SET&lt;/span> first_name &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;MOSTEL&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> actor_id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">7&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Adquiere un lock exclusivo en la fila actor_id = 7
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> actor &lt;span style="color:#66d9ef">SET&lt;/span> last_name &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;PENELOPE&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> actor_id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">1&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Queda bloqueada esperando que Sesión 1 libere actor_id = 1
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Sesión 1 (Ejecutamos otra query en la misma sesión):&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> actor &lt;span style="color:#66d9ef">SET&lt;/span> last_name &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;GRACE&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> actor_id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">7&lt;/span>;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>SQL Error [1213] [40001]: (conn=6) Deadlock found when trying to get lock; try restarting transaction&lt;/strong>&lt;/p>
+&lt;p>&lt;strong>DeadLock! =&amp;gt; Ambas sesiones están esperando recursos que la otra ya posee.&lt;/strong>&lt;/p>
+&lt;p>En este diagrama, se muestra el flujo:&lt;/p>
+&lt;!-- raw HTML omitted -->
+&lt;!-- raw HTML omitted -->
+&lt;!-- raw HTML omitted -->
+&lt;h2 id="diferencia-entre-deadlock-y-lock-timeout">&lt;a href="#diferencia-entre-deadlock-y-lock-timeout" class="header-anchor">&lt;/a>Diferencia entre Deadlock y Lock Timeout
+&lt;/h2>&lt;ul>
+&lt;li>
+&lt;p>&lt;strong>Deadlock&lt;/strong>: Situación en la que dos o más transacciones se bloquean mutuamente, formando un ciclo de espera donde ninguna puede avanzar. MySQL detecta el ciclo y aborta una transacción, generando el error &lt;code>1213: Deadlock found&lt;/code>.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>&lt;strong>Lock Timeout&lt;/strong>: Ocurre cuando una transacción espera demasiado por un recurso bloqueado por otra, sin formar un ciclo. Si la espera supera el límite configurado (&lt;code>innodb_lock_wait_timeout&lt;/code>), MySQL termina la transacción con el error &lt;code>1205: Lock wait timeout exceeded&lt;/code>.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>&lt;strong>Diferencia clave&lt;/strong>: Un deadlock implica un ciclo de dependencias cruzadas entre transacciones; un lock timeout es simplemente una espera prolongada por un recurso sin resolución.&lt;/p>
+&lt;/li>
+&lt;/ul>
+&lt;h2 id="consejos-para-investigar-y-evitar-deadlocks">&lt;a href="#consejos-para-investigar-y-evitar-deadlocks" class="header-anchor">&lt;/a>Consejos para investigar y evitar deadlocks
+&lt;/h2>&lt;p>A continuación, se detallan prácticas recomendadas para identificar y mitigar deadlocks en bases de datos.&lt;/p>
+&lt;ol>
+&lt;li>
+&lt;p>&lt;strong>Reducir la duración de las transacciones&lt;/strong> Las transacciones de larga duración mantienen locks activos durante más tiempo, aumentando la probabilidad de deadlocks. Dividir transacciones complejas en unidades más pequeñas reduce el tiempo de retención de locks y minimiza conflictos.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>&lt;strong>Mantener un orden consistente en las operaciones&lt;/strong> Los deadlocks ocurren frecuentemente cuando transacciones acceden a recursos en órdenes diferentes, creando ciclos de dependencias. Establecer un orden fijo para el acceso a tablas o filas previene estos ciclos al formar colas secuenciales.&lt;/p>
+&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>&lt;strong>Ejemplo&lt;/strong>: Modificando el escenario de la tabla actor para acceder primero a actor_id = 1 y luego a actor_id = 7 en ambas sesiones:&lt;/li>
+&lt;/ul>
+&lt;ol start="3">
+&lt;li>
+&lt;p>&lt;strong>Implementar lógica de reintento en la aplicación&lt;/strong> Aunque los deadlocks no siempre se pueden evitar, agregar mecanismos de reintento permite que la aplicación reejecute la transacción abortada automáticamente.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>&lt;strong>Revisar y ajustar niveles de aislamiento transaccional&lt;/strong> Niveles de aislamiento altos generan más locks explícitos.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>&lt;strong>Optimizar con índices adecuados&lt;/strong> Consultas sin índices apropiados escanean más registros, estableciendo locks innecesarios. Agregar índices bien diseñados reduce el número de locks y acelera las operaciones.&lt;/p>
+&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>
+&lt;p>&lt;strong>Ejemplo&lt;/strong>: Para una tabla sin índice en producto_id:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">`&lt;/span> &lt;span style="color:#75715e">-- Consulta lenta sin índice
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> inventario &lt;span style="color:#66d9ef">SET&lt;/span> stock &lt;span style="color:#f92672">=&lt;/span> stock &lt;span style="color:#f92672">-&lt;/span> &lt;span style="color:#ae81ff">1&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> producto_id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>; &lt;span style="color:#f92672">`&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Si añadimos un índice:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">`&lt;/span> &lt;span style="color:#66d9ef">CREATE&lt;/span> &lt;span style="color:#66d9ef">INDEX&lt;/span> idx_producto_id &lt;span style="color:#66d9ef">ON&lt;/span> inventario (producto_id); &lt;span style="color:#f92672">`&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Esto limita los locks a filas específicas en lugar de rangos amplios.&lt;/p>
+&lt;/li>
+&lt;/ul>
+&lt;ol start="6">
+&lt;li>&lt;strong>Minimizar el impacto de locks en operaciones de esquema&lt;/strong> Evitar operaciones que adquieran locks agresivos durante periodos prolongados.&lt;/li>
+&lt;/ol>
+&lt;p>Estas prácticas, combinadas con monitoreo continuo (por ejemplo, revisando logs de deadlocks en MySQL con SHOW ENGINE INNODB STATUS), ayudan a mitigar deadlocks efectivamente.&lt;/p></description></item><item><title>About</title><link>https://alvarorosado.es/page/about/</link><pubDate>Thu, 07 Aug 2025 00:00:00 +0000</pubDate><guid>https://alvarorosado.es/page/about/</guid><description>&lt;h2 id="hola-">&lt;a href="#hola-" class="header-anchor">&lt;/a>Hola 👋
+&lt;/h2>&lt;p>Soy un desarrollador de software con mentalidad de producto y un fuerte enfoque en buenas prácticas de ingeniería.&lt;/p>
+&lt;p>Trabajo en el diseño e implementación de sistemas backend escalables, principalmente en PHP con Symfony, integrando arquitecturas orientadas a eventos y siguiendo principios de &lt;strong>Domain-Driven Design (DDD)&lt;/strong>.&lt;/p>
+&lt;p>Me interesa construir soluciones que no solo funcionen bien, sino que también sean mantenibles, bien diseñadas y pensadas para evolucionar con el negocio. Me gusta cuando la ingeniería se alinea con el propósito del producto.&lt;/p>
+&lt;p>En este blog comparto ideas, aprendizajes y problemas reales que me encuentro mientras construyo software en producción.&lt;/p>
+&lt;hr>
+&lt;p>&lt;strong>Intereses técnicos&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>Arquitectura orientada a eventos&lt;/li>
+&lt;li>DDD aplicado a productos reales&lt;/li>
+&lt;li>Symfony y ecosistemas PHP modernos&lt;/li>
+&lt;li>Kafka y sistemas distribuidos&lt;/li>
+&lt;li>Testing&lt;/li>
+&lt;li>PostgreSQL, MongoDB y modelado de datos&lt;/li>
+&lt;/ul>
+&lt;hr>
+&lt;p>&lt;strong>Disclaimer:&lt;/strong> A veces el código sale limpio, a veces solo sale a tiempo.&lt;/p>
+&lt;p>&lt;strong>Contacto:&lt;/strong> &lt;a class="link" href="mailto:alvaro.rosado93@gmail.com" >alvaro.rosado93@gmail.com&lt;/a>&lt;/p></description></item><item><title>Los problemas de Symfony Messenger con Kafka</title><link>https://alvarorosado.es/posts/2025-06-11-losproblemasdesymfonymessengerconkafka/</link><pubDate>Tue, 10 Jun 2025 15:43:00 -0600</pubDate><guid>https://alvarorosado.es/posts/2025-06-11-losproblemasdesymfonymessengerconkafka/</guid><description>&lt;p>Tras años trabajando con Apache Kafka y Symfony Messenger en entornos de producción, he llegado a una conclusión frustrante: los &lt;em>transports&lt;/em> actuales de Symfony Messenger no están diseñados para aprovechar al máximo las capacidades de Kafka. No es que estén mal implementados, sino que abordan el problema desde una perspectiva equivocada. Kafka es una plataforma de &lt;em>streaming&lt;/em> de eventos, no una cola de mensajes como RabbitMQ o Amazon SQS. Sin embargo, Symfony Messenger los trata de forma indistinta, lo que genera fricciones arquitecturales, código complicado y soluciones que no escalan bien.&lt;/p>
+&lt;h2 id="el-problema-de-base">&lt;a href="#el-problema-de-base" class="header-anchor">&lt;/a>El problema de base
+&lt;/h2>&lt;p>Kafka está diseñado para manejar &lt;strong>eventos en streaming&lt;/strong>, mientras que Redis, RabbitMQ o SQS son &lt;strong>colas de mensajes&lt;/strong>. Aunque parecen similares, sus propósitos y dinámicas son distintos. Symfony Messenger, al tratar a Kafka como una cola más, introduce problemas que se reflejan en configuraciones redundantes, lógica confusa y un mantenimiento innecesariamente complejo.&lt;/p>
+&lt;p>Imagina un &lt;em>topic&lt;/em> en Kafka llamado &lt;code>user_events&lt;/code>, que agrupa todos los eventos relacionados con usuarios: registros, actualizaciones, cambios de plan, eliminaciones, etc. Esto es típico en una arquitectura basada en eventos, donde los eventos relacionados coexisten en un mismo &lt;em>stream&lt;/em>. Ahora, supongamos que tienes varios servicios:&lt;/p>
+&lt;ul>
+&lt;li>El servicio de facturación solo necesita procesar eventos de tipo &lt;code>plan_changed&lt;/code>.&lt;/li>
+&lt;li>El servicio de notificaciones solo quiere los eventos &lt;code>user_registered&lt;/code>.&lt;/li>
+&lt;li>El servicio de analíticas necesita todos los eventos.&lt;/li>
+&lt;/ul>
+&lt;p>Con los &lt;em>transports&lt;/em> actuales de Symfony Messenger, te enfrentas a tres opciones, todas problemáticas:&lt;/p>
+&lt;ol>
+&lt;li>&lt;strong>Crear un &lt;em>transport&lt;/em> por tipo de evento&lt;/strong>: Esto lleva a tener decenas de &lt;em>transports&lt;/em>, cada uno escuchando un &lt;em>topic&lt;/em> diferente, lo que fragmenta la cohesión del &lt;em>stream&lt;/em> de eventos.&lt;/li>
+&lt;li>&lt;strong>Procesar todo y filtrar en el &lt;em>handler&lt;/em>&lt;/strong>: El servicio de facturación termina deserializando eventos irrelevantes, como registros de usuarios, lo que es ineficiente y complica la lógica.&lt;/li>
+&lt;li>&lt;strong>Usar un &lt;em>transport&lt;/em> genérico con lógica de enrutamiento personalizada&lt;/strong>: Esto resulta en código confuso, con lógica de enrutamiento dispersa que se vuelve inmantenible con el tiempo.&lt;/li>
+&lt;/ol>
+&lt;h2 id="la-interoperabilidad-y-la-serialización">&lt;a href="#la-interoperabilidad-y-la-serializaci%c3%b3n" class="header-anchor">&lt;/a>La interoperabilidad y la serialización
+&lt;/h2>&lt;p>Si tu aplicación produce y consume sus propios mensajes, la serialización PHP nativa de Symfony Messenger funciona sin problemas. Sin embargo, cuando varias aplicaciones (incluso si todas usan Symfony) necesitan interoperar, la cosa se complica. La serialización PHP depende de que el consumidor tenga acceso a las mismas clases PHP que generaron el mensaje. Por ejemplo, si el servicio de usuarios produce un evento &lt;code>App\Event\UserRegistered&lt;/code> y el servicio de facturación intenta deserializarlo, fallará si no tiene esa clase exacta.&lt;/p>
+&lt;p>Una solución aparente es usar JSON para serializar los mensajes, pero esto introduce otro problema:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-php" data-lang="php">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">// El servicio A produce un evento
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>$message &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#66d9ef">new&lt;/span> &lt;span style="color:#a6e22e">UserRegistered&lt;/span>($userId, $email);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">// Se serializa a JSON, pero...
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">// El mensaje llega al servicio B como:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>{&lt;span style="color:#e6db74">&amp;#34;user_id&amp;#34;&lt;/span>&lt;span style="color:#f92672">:&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>, &lt;span style="color:#e6db74">&amp;#34;email&amp;#34;&lt;/span>&lt;span style="color:#f92672">:&lt;/span> &lt;span style="color:#e6db74">&amp;#34;test@example.com&amp;#34;&lt;/span>}
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">// ¿Cómo sabe el servicio B qué clase instanciar? ¿UserRegistered? ¿UserCreated?
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Sin metadatos que indiquen el tipo de mensaje, el consumidor no tiene forma de interpretar correctamente el JSON recibido.&lt;/p>
+&lt;h2 id="configuraciones-redundantes">&lt;a href="#configuraciones-redundantes" class="header-anchor">&lt;/a>Configuraciones redundantes
+&lt;/h2>&lt;p>En un entorno real de Kafka (no en un &lt;em>docker-compose&lt;/em> local), las configuraciones son extensas: autenticación SASL, SSL, ajustes de rendimiento, &lt;em>timeouts&lt;/em>, etc. Con los &lt;em>transports&lt;/em> actuales, estas configuraciones se repiten para cada &lt;em>transport&lt;/em>, lo que genera duplicación innecesaria:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">user_events&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">options&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">config&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">security.protocol&lt;/span>: &lt;span style="color:#ae81ff">SASL_SSL&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.mechanisms&lt;/span>: &lt;span style="color:#ae81ff">PLAIN&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.username&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;%env(KAFKA_USER)%&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.password&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;%env(KAFKA_PASS)%&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">auto.offset.reset&lt;/span>: &lt;span style="color:#ae81ff">earliest&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">enable.auto.commit&lt;/span>: &lt;span style="color:#66d9ef">false&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># ... otras 20 líneas de configuración&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">order_events&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">options&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">config&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">security.protocol&lt;/span>: &lt;span style="color:#ae81ff">SASL_SSL &lt;/span> &lt;span style="color:#75715e"># Repetido&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.mechanisms&lt;/span>: &lt;span style="color:#ae81ff">PLAIN &lt;/span> &lt;span style="color:#75715e"># Repetido&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.username&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;%env(KAFKA_USER)%&amp;#34;&lt;/span> &lt;span style="color:#75715e"># Repetido&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># ... las mismas 20 líneas&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Esta repetición no solo es tediosa, sino que también es una fuente de errores sutiles, como olvidar actualizar un parámetro en un &lt;em>transport&lt;/em> cuando cambias otro.&lt;/p>
+&lt;h2 id="una-solución-mejor">&lt;a href="#una-soluci%c3%b3n-mejor" class="header-anchor">&lt;/a>Una solución mejor
+&lt;/h2>&lt;p>Cansado de estas limitaciones, desarrollé un &lt;em>transport&lt;/em> personalizado para Symfony Messenger que se alinea mejor con la naturaleza de Kafka.&lt;/p>
+&lt;h3 id="identificación-clara-de-mensajes">&lt;a href="#identificaci%c3%b3n-clara-de-mensajes" class="header-anchor">&lt;/a>Identificación clara de mensajes
+&lt;/h3>&lt;p>Los mensajes incluyen un identificador explícito que se almacena en los &lt;em>headers&lt;/em> de Kafka:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-php" data-lang="php">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">class&lt;/span> &lt;span style="color:#a6e22e">UserRegistered&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>{
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">public&lt;/span> &lt;span style="color:#66d9ef">function&lt;/span> &lt;span style="color:#a6e22e">__construct&lt;/span>(
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">public&lt;/span> &lt;span style="color:#a6e22e">readonly&lt;/span> &lt;span style="color:#a6e22e">string&lt;/span> $userId,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">public&lt;/span> &lt;span style="color:#a6e22e">readonly&lt;/span> &lt;span style="color:#a6e22e">string&lt;/span> $email
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> ) {}
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">public&lt;/span> &lt;span style="color:#66d9ef">function&lt;/span> &lt;span style="color:#a6e22e">identifier&lt;/span>()&lt;span style="color:#f92672">:&lt;/span> &lt;span style="color:#a6e22e">string&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> {
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">return&lt;/span> &lt;span style="color:#e6db74">&amp;#39;user_registered&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> }
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>}
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Cuando el mensaje llega al consumidor, el &lt;em>transport&lt;/em> lee este identificador y mapea automáticamente el JSON a la clase PHP correspondiente.&lt;/p>
+&lt;h3 id="consumo-selectivo-de-eventos">&lt;a href="#consumo-selectivo-de-eventos" class="header-anchor">&lt;/a>Consumo selectivo de eventos
+&lt;/h3>&lt;p>Puedes especificar qué tipos de eventos procesar desde un &lt;em>topic&lt;/em>. Los eventos no configurados se ignoran automáticamente (&lt;em>auto-commit&lt;/em>):&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">consumer&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">routing&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">user_registered&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">class&lt;/span>: &lt;span style="color:#ae81ff">App\Message\UserRegistered&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">plan_changed&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">class&lt;/span>: &lt;span style="color:#ae81ff">App\Message\PlanChanged&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Otros eventos como user_updated o user_deleted se ignoran&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Esto permite que múltiples servicios consuman el mismo &lt;em>topic&lt;/em>, procesando solo los eventos relevantes sin interferencias.&lt;/p>
+&lt;h3 id="configuración-centralizada">&lt;a href="#configuraci%c3%b3n-centralizada" class="header-anchor">&lt;/a>Configuración centralizada
+&lt;/h3>&lt;p>Las configuraciones comunes de Kafka se definen una sola vez y se heredan en todos los &lt;em>transports&lt;/em>:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># config/packages/event_driven_kafka_transport.yaml&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">event_driven_kafka_transport&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">consumer&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">config&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">security.protocol&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;%env(KAFKA_SECURITY_PROTOCOL)%&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.username&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;%env(KAFKA_USER)%&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># ... configuración común&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># config/packages/messenger.yaml&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">framework&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">messenger&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">transports&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">billing_events&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">options&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">consumer&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">config&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">group.id&lt;/span>: &lt;span style="color:#ae81ff">billing-service &lt;/span> &lt;span style="color:#75715e"># Solo configuraciones específicas&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="soporte-nativo-para-múltiples-topics">&lt;a href="#soporte-nativo-para-m%c3%baltiples-topics" class="header-anchor">&lt;/a>Soporte nativo para múltiples &lt;em>topics&lt;/em>
+&lt;/h3>&lt;p>Puedes enviar un evento a varios &lt;em>topics&lt;/em> sin configuraciones adicionales:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">options&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">topics&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#ae81ff">user_events&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#ae81ff">audit_events&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#ae81ff">analytics_events&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>El evento se publica atómicamente en todos los &lt;em>topics&lt;/em> especificados.&lt;/p>
+&lt;h2 id="detalles-técnicos">&lt;a href="#detalles-t%c3%a9cnicos" class="header-anchor">&lt;/a>Detalles técnicos
+&lt;/h2>&lt;h3 id="sistema-de-hooks">&lt;a href="#sistema-de-hooks" class="header-anchor">&lt;/a>Sistema de &lt;em>hooks&lt;/em>
+&lt;/h3>&lt;p>Para mantener el código desacoplado, el &lt;em>transport&lt;/em> utiliza &lt;em>hooks&lt;/em> que se ejecutan antes y después de producir o consumir mensajes:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-php" data-lang="php">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">class&lt;/span> &lt;span style="color:#a6e22e">EventHook&lt;/span> &lt;span style="color:#66d9ef">implements&lt;/span> &lt;span style="color:#a6e22e">KafkaTransportHookInterface&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>{
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">public&lt;/span> &lt;span style="color:#66d9ef">function&lt;/span> &lt;span style="color:#a6e22e">beforeProduce&lt;/span>(&lt;span style="color:#a6e22e">Envelope&lt;/span> $envelope)&lt;span style="color:#f92672">:&lt;/span> &lt;span style="color:#a6e22e">Envelope&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> {
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> $message &lt;span style="color:#f92672">=&lt;/span> $envelope&lt;span style="color:#f92672">-&amp;gt;&lt;/span>&lt;span style="color:#a6e22e">getMessage&lt;/span>();
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">if&lt;/span> ($message &lt;span style="color:#a6e22e">instanceof&lt;/span> &lt;span style="color:#a6e22e">Message&lt;/span>) {
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">return&lt;/span> $envelope&lt;span style="color:#f92672">-&amp;gt;&lt;/span>&lt;span style="color:#a6e22e">with&lt;/span>(&lt;span style="color:#66d9ef">new&lt;/span> &lt;span style="color:#a6e22e">KafkaIdentifierStamp&lt;/span>($message&lt;span style="color:#f92672">-&amp;gt;&lt;/span>&lt;span style="color:#a6e22e">identifier&lt;/span>()));
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> }
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">return&lt;/span> $envelope;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> }
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>}
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>El &lt;em>transport&lt;/em> detecta automáticamente estos &lt;em>hooks&lt;/em> sin necesidad de configuraciones adicionales.&lt;/p>
+&lt;h3 id="compatibilidad-con-configuraciones-existentes">&lt;a href="#compatibilidad-con-configuraciones-existentes" class="header-anchor">&lt;/a>Compatibilidad con configuraciones existentes
+&lt;/h3>&lt;p>Para facilitar la transición, el &lt;em>transport&lt;/em> usa un DSN diferente, permitiendo que coexista con los &lt;em>transports&lt;/em> actuales:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Transport actual&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>KAFKA_DSN&lt;span style="color:#f92672">=&lt;/span>kafka://localhost:9092
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Nuevo transport&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>KAFKA_EVENTS_DSN&lt;span style="color:#f92672">=&lt;/span>ed+kafka://localhost:9092
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="vale-la-pena-el-esfuerzo">&lt;a href="#vale-la-pena-el-esfuerzo" class="header-anchor">&lt;/a>¿Vale la pena el esfuerzo?
+&lt;/h2>&lt;p>Desarrollar un &lt;em>transport&lt;/em> personalizado requiere tiempo y un conocimiento profundo de Kafka y del código fuente de Symfony Messenger. Además, hay que lidiar con casos extremos que solo aparecen en producción con tráfico real. Entonces, ¿por qué no usar los &lt;em>transports&lt;/em> existentes y aplicar parches?&lt;/p>
+&lt;p>Porque los parches se acumulan. Empiezas filtrando eventos en el &lt;em>handler&lt;/em>, luego duplicas configuraciones, después creas servicios para gestionar el enrutamiento&amp;hellip; y terminas con un sistema frágil y difícil de mantener. Con un &lt;em>transport&lt;/em> bien diseñado, agregar un nuevo tipo de evento se reduce a un par de líneas de configuración, en lugar de una tarde de trabajo y una &lt;em>pull request&lt;/em> que modifica múltiples archivos.&lt;/p>
+&lt;p>Cuando el &lt;em>transport&lt;/em> está bien implementado, se vuelve transparente para el equipo. Los desarrolladores pueden usarlo sin preocuparse por las complejidades internas, lo que acelera el desarrollo y reduce errores.&lt;/p>
+&lt;hr>
+&lt;p>&lt;em>El código completo del &lt;em>transport&lt;/em> está disponible en &lt;a class="link" href="https://github.com/AlvaroRosado/event-driven-kafka-messenger-transport" target="_blank" rel="noopener"
+>GitHub&lt;/a>. Si estás lidiando con los mismos problemas, podría ahorrarte muchos dolores de cabeza.&lt;/em>&lt;/p></description></item><item><title>Transacciones</title><link>https://alvarorosado.es/posts/2025-05-27-transacciones/</link><pubDate>Tue, 27 May 2025 17:00:00 -0600</pubDate><guid>https://alvarorosado.es/posts/2025-05-27-transacciones/</guid><description>&lt;p>En esta entrada vamos a profundizar un poco en como funcionan las transacciones a nivel de base de datos, problemas comunes y le echaremos un ojo a las funcionalidades no tan conocidas que podemos usar con doctrine.&lt;/p>
+&lt;h2 id="estás-hart-de-usarlas-pero-en-sí-qué-es-una-transacción">&lt;a href="#est%c3%a1s-hart-de-usarlas-pero-en-s%c3%ad-qu%c3%a9-es-una-transacci%c3%b3n" class="header-anchor">&lt;/a>Estás hart@ de usarlas pero &amp;hellip;¿En sí qué es una transacción?
+&lt;/h2>&lt;p>Es una secuencia de una o más operaciones ejecutadas como una unidad lógica, esto significa que una transacción asegura que todas las operaciones que en ella hacemos, se han ejecutado exitosamente, si alguna falla las operaciones implicadas se revienten haciendo un rollback.&lt;/p>
+&lt;h2 id="las-propiedades-acid-los-pilares-de-las-transacciones">&lt;a href="#las-propiedades-acid-los-pilares-de-las-transacciones" class="header-anchor">&lt;/a>&lt;strong>Las propiedades ACID: Los pilares de las transacciones&lt;/strong>
+&lt;/h2>&lt;p>Para entender completamente las transacciones, es fundamental conocer las propiedades ACID, que garantizan la confiabilidad de las operaciones en base de datos:&lt;/p>
+&lt;p>&lt;img src="https://substackcdn.com/image/fetch/w_1456,c_limit,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fbac45aff-4ebb-4654-94db-27a793f61309_1253x883.gif"
+loading="lazy"
+alt="img"
+>&lt;/p>
+&lt;h3 id="atomicidad-atomicity">&lt;a href="#atomicidad-atomicity" class="header-anchor">&lt;/a>&lt;strong>Atomicidad (Atomicity)&lt;/strong>
+&lt;/h3>&lt;p>Una transacción es una unidad indivisible de trabajo. Todas las operaciones dentro de una transacción se ejecutan completamente o no se ejecutan en absoluto. Si cualquier operación falla, toda la transacción se revierte.&lt;/p>
+&lt;h3 id="consistencia-consistency">&lt;a href="#consistencia-consistency" class="header-anchor">&lt;/a>&lt;strong>Consistencia (Consistency)&lt;/strong>
+&lt;/h3>&lt;p>La base de datos debe mantenerse en un estado consistente antes y después de cada transacción. Todas las reglas de integridad, restricciones y triggers deben respetarse.&lt;/p>
+&lt;h3 id="aislamiento-isolation">&lt;a href="#aislamiento-isolation" class="header-anchor">&lt;/a>&lt;strong>Aislamiento (Isolation)&lt;/strong>
+&lt;/h3>&lt;p>Las transacciones concurrentes no deben interferir entre sí. Cada transacción debe ejecutarse como si fuera la única operación en la base de datos.&lt;/p>
+&lt;h3 id="durabilidad-durability">&lt;a href="#durabilidad-durability" class="header-anchor">&lt;/a>&lt;strong>Durabilidad (Durability)&lt;/strong>
+&lt;/h3>&lt;p>Una vez que una transacción se confirma, sus cambios son permanentes, incluso en caso de fallos del sistema.&lt;/p>
+&lt;h2 id="aislamiento-transaccional">&lt;a href="#aislamiento-transaccional" class="header-anchor">&lt;/a>Aislamiento transaccional:
+&lt;/h2>&lt;p>Cuando varias transacciones se ejecutan simultáneamente en una base de datos, pueden producirse varios problemas de concurrencia, como lecturas sucias, lecturas no repetibles y lecturas fantasma. Para gestionar estos problemas, las bases de datos SQL tienen diferentes niveles de aislamiento de transacciones, que controlan qué cambios en los datos son visibles para las transacciones que se ejecutan simultáneamente.&lt;/p>
+&lt;h1 id="niveles-de-aislamiento-de-transacciones">&lt;a href="#niveles-de-aislamiento-de-transacciones" class="header-anchor">&lt;/a>Niveles de Aislamiento de Transacciones
+&lt;/h1>&lt;h2 id="comparación-general">&lt;a href="#comparaci%c3%b3n-general" class="header-anchor">&lt;/a>Comparación General
+&lt;/h2>&lt;table>
+&lt;thead>
+&lt;tr>
+&lt;th>Nivel de Aislamiento&lt;/th>
+&lt;th>Lectura Sucia&lt;/th>
+&lt;th>Non-Repeatable Read&lt;/th>
+&lt;th>Phantom Read&lt;/th>
+&lt;th>Caso de Uso&lt;/th>
+&lt;th>Ejemplo Práctico&lt;/th>
+&lt;/tr>
+&lt;/thead>
+&lt;tbody>
+&lt;tr>
+&lt;td>&lt;strong>READ UNCOMMITTED&lt;/strong>&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>Reportes aproximados donde la precisión exacta no es crítica&lt;/td>
+&lt;td>Dashboard en tiempo real mostrando estadísticas generales de ventas&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>READ COMMITTED&lt;/strong>&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>Aplicaciones web típicas, operaciones CRUD básicas&lt;/td>
+&lt;td>Sistema de e-commerce mostrando inventario actual&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>REPEATABLE READ&lt;/strong>&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>Reportes financieros que requieren consistencia durante la ejecución&lt;/td>
+&lt;td>Generación de estados de cuenta bancarios&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>SERIALIZABLE&lt;/strong>&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>Transacciones críticas que requieren aislamiento total&lt;/td>
+&lt;td>Transferencias bancarias entre cuentas&lt;/td>
+&lt;/tr>
+&lt;/tbody>
+&lt;/table>
+&lt;h2 id="explicación-de-anomalías">&lt;a href="#explicaci%c3%b3n-de-anomal%c3%adas" class="header-anchor">&lt;/a>Explicación de Anomalías
+&lt;/h2>&lt;h3 id="-lectura-sucia-dirty-read">&lt;a href="#-lectura-sucia-dirty-read" class="header-anchor">&lt;/a>🔴 &lt;strong>Lectura Sucia (Dirty Read)&lt;/strong>
+&lt;/h3>&lt;p>Leer datos que han sido modificados por otra transacción pero aún no confirmados.&lt;/p>
+&lt;p>&lt;strong>Ejemplo:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> accounts (acctnum, balance) &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">12345&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Aún no committed
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B (con READ UNCOMMITTED)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>; &lt;span style="color:#75715e">-- Ve el registro
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">ROLLBACK&lt;/span>; &lt;span style="color:#75715e">-- La cuenta nunca existió realmente
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>⚠️ &lt;strong>Nota PostgreSQL&lt;/strong>: PostgreSQL no soporta realmente READ UNCOMMITTED - lo trata como READ COMMITTED.&lt;/p>
+&lt;h3 id="-non-repeatable-read">&lt;a href="#-non-repeatable-read" class="header-anchor">&lt;/a>🟡 &lt;strong>Non-Repeatable Read&lt;/strong>
+&lt;/h3>&lt;p>Una consulta repetida dentro de la misma transacción devuelve resultados diferentes.&lt;/p>
+&lt;p>&lt;strong>Ejemplo:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> balance &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>; &lt;span style="color:#75715e">-- Lee $100
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">500&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">COMMIT&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A (misma transacción)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> balance &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>; &lt;span style="color:#75715e">-- Lee $500
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Problema &amp;ldquo;Write After Read&amp;rdquo;:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">IF&lt;/span> (&lt;span style="color:#66d9ef">SELECT&lt;/span> balance &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>) &lt;span style="color:#f92672">&amp;gt;&lt;/span> &lt;span style="color:#ae81ff">1000&lt;/span> &lt;span style="color:#66d9ef">THEN&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e">-- Otro proceso puede cambiar el balance aquí
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> balance &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#ae81ff">1&lt;/span>.&lt;span style="color:#ae81ff">1&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">END&lt;/span> &lt;span style="color:#66d9ef">IF&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">COMMIT&lt;/span>;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="-phantom-read">&lt;a href="#-phantom-read" class="header-anchor">&lt;/a>🟠 &lt;strong>Phantom Read&lt;/strong>
+&lt;/h3>&lt;p>Nuevas filas aparecen o desaparecen entre consultas de la misma transacción.&lt;/p>
+&lt;p>&lt;strong>Ejemplo:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#66d9ef">COUNT&lt;/span>(&lt;span style="color:#f92672">*&lt;/span>) &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> balance &lt;span style="color:#f92672">&amp;gt;&lt;/span> &lt;span style="color:#ae81ff">0&lt;/span>; &lt;span style="color:#75715e">-- Cuenta 5
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> accounts &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">12345&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">COMMIT&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A (misma transacción)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#66d9ef">COUNT&lt;/span>(&lt;span style="color:#f92672">*&lt;/span>) &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> balance &lt;span style="color:#f92672">&amp;gt;&lt;/span> &lt;span style="color:#ae81ff">0&lt;/span>; &lt;span style="color:#75715e">-- Cuenta 6
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="tipos-de-locks-en-mysql-y-postgresql">&lt;a href="#tipos-de-locks-en-mysql-y-postgresql" class="header-anchor">&lt;/a>&lt;strong>Tipos de Locks en MySQL y PostgreSQL&lt;/strong>
+&lt;/h2>&lt;p>Los locks (bloqueos) son fundamentales para manejar la concurrencia en bases de datos. Diferentes tipos de locks permiten controlar el acceso a recursos compartidos y prevenir condiciones de carrera.&lt;/p>
+&lt;h3 id="shared-lock-bloqueo-compartido">&lt;a href="#shared-lock-bloqueo-compartido" class="header-anchor">&lt;/a>Shared Lock (Bloqueo Compartido)
+&lt;/h3>&lt;p>Permite que múltiples transacciones lean el mismo recurso simultáneamente, pero previene escrituras.&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">SHARE&lt;/span>;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Características:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>✅ Múltiples lecturas concurrentes permitidas&lt;/li>
+&lt;li>❌ Bloquea escrituras mientras esté activo&lt;/li>
+&lt;li>🎯 Ideal para: Reportes que requieren datos consistentes&lt;/li>
+&lt;/ul>
+&lt;h3 id="exclusive-lock-bloqueo-exclusivo">&lt;a href="#exclusive-lock-bloqueo-exclusivo" class="header-anchor">&lt;/a>Exclusive Lock (Bloqueo Exclusivo)
+&lt;/h3>&lt;p>Bloquea completamente el recurso, previniendo tanto lecturas como escrituras de otras transacciones.&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">456&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Características:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>❌ Bloquea todas las operaciones (lectura y escritura)&lt;/li>
+&lt;li>🎯 Ideal para: Actualizaciones críticas como inventario, transferencias&lt;/li>
+&lt;/ul>
+&lt;h3 id="metadata-locks">&lt;a href="#metadata-locks" class="header-anchor">&lt;/a>Metadata Locks
+&lt;/h3>&lt;p>Los metadata locks protegen la estructura de las tablas durante operaciones DDL (Data Definition Language).&lt;/p>
+&lt;h3 id="monitoring-de-locks">&lt;a href="#monitoring-de-locks" class="header-anchor">&lt;/a>Monitoring de Locks
+&lt;/h3>&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- PostgreSQL: Ver locks activos
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> locktype,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">database&lt;/span>,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> relation::regclass,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> page,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> tuple,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> transactionid,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">mode&lt;/span>,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">granted&lt;/span>,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> pid,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> query
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">FROM&lt;/span> pg_locks
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">JOIN&lt;/span> pg_stat_activity &lt;span style="color:#66d9ef">ON&lt;/span> pg_locks.pid &lt;span style="color:#f92672">=&lt;/span> pg_stat_activity.pid
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">WHERE&lt;/span> &lt;span style="color:#66d9ef">NOT&lt;/span> &lt;span style="color:#66d9ef">granted&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- MySQL:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> object_type,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> object_schema,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> object_name,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_type,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_duration,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_status,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> thread_id
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">FROM&lt;/span> performance_schema.metadata_locks
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">WHERE&lt;/span> lock_status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;PENDING&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- MariaDB:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> information_schema.innodb_locks;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> information_schema.innodb_lock_waits;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="comportamiento-completo-de-locks-en-mysql-según-nivel-de-aislamiento">&lt;a href="#comportamiento-completo-de-locks-en-mysql-seg%c3%ban-nivel-de-aislamiento" class="header-anchor">&lt;/a>&lt;strong>Comportamiento Completo de Locks en MySQL según Nivel de Aislamiento&lt;/strong>
+&lt;/h2>&lt;p>MySQL InnoDB implementa diferentes estrategias de bloqueo para cada nivel de aislamiento. El nivel por defecto es &lt;strong>REPEATABLE READ&lt;/strong> y los locks se aplican automáticamente en &lt;strong>todas las operaciones DML&lt;/strong> (INSERT, UPDATE, DELETE), no solo en consultas explícitas con FOR UPDATE.&lt;/p>
+&lt;h3 id="repeatable-read-nivel-por-defecto">&lt;a href="#repeatable-read-nivel-por-defecto" class="header-anchor">&lt;/a>&lt;strong>REPEATABLE READ (Nivel por Defecto)&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Características principales:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>Las lecturas consistentes usan snapshots&lt;/li>
+&lt;li>Utiliza gap locks y next-key locks automáticamente&lt;/li>
+&lt;li>Se aplica en SELECT FOR UPDATE/SHARE, UPDATE, DELETE e INSERT&lt;/li>
+&lt;/ul>
+&lt;p>&lt;strong>Comportamiento en SELECT FOR UPDATE/SHARE:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Índice único: solo record lock
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Solo bloquea el registro específico
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Búsqueda por rango: gap + record locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> orders &lt;span style="color:#66d9ef">WHERE&lt;/span> status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;pending&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Bloquea registros existentes + gaps entre ellos
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Comportamiento en UPDATE:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Tabla: products (id, category, price)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Datos: (1,&amp;#39;electronics&amp;#39;,100), (2,&amp;#39;electronics&amp;#39;,300), (3,&amp;#39;electronics&amp;#39;,500)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> products &lt;span style="color:#66d9ef">SET&lt;/span> price &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">250&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Aplica automáticamente:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 1. Next-key locks en todos los registros con category=&amp;#39;electronics&amp;#39;
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 2. Gap locks entre esos registros
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 3. Gap lock después del último registro del rango
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Comportamiento en INSERT:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Los INSERTs adquieren insert intention locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">4&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">350&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Si hay gap locks activos en el rango donde va el nuevo registro:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 1. INSERT espera hasta que se liberen los gap locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 2. Luego aplica record lock en el nuevo registro
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 3. Pueden ocurrir deadlocks con otros INSERTs concurrentes
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Comportamiento en DELETE:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- DELETE usa next-key locks igual que UPDATE
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">DELETE&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> orders &lt;span style="color:#66d9ef">WHERE&lt;/span> status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;cancelled&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Bloquea:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 1. Todos los registros que coinciden (record locks)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 2. Gaps entre esos registros (gap locks)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 3. Previene INSERTs de nuevos registros &amp;#39;cancelled&amp;#39;
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="read-committed">&lt;a href="#read-committed" class="header-anchor">&lt;/a>&lt;strong>READ COMMITTED&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Diferencias clave:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>NO usa gap locks en operaciones normales&lt;/li>
+&lt;li>Solo record locks en registros que realmente modifica&lt;/li>
+&lt;li>Libera locks de registros que no cumplen condiciones WHERE&lt;/li>
+&lt;/ul>
+&lt;p>&lt;strong>Comportamiento mejorado en UPDATE:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Tabla sin índices
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">CREATE&lt;/span> &lt;span style="color:#66d9ef">TABLE&lt;/span> t (a INT &lt;span style="color:#66d9ef">NOT&lt;/span> &lt;span style="color:#66d9ef">NULL&lt;/span>, b INT) ENGINE &lt;span style="color:#f92672">=&lt;/span> InnoDB;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> t &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">1&lt;/span>,&lt;span style="color:#ae81ff">2&lt;/span>),(&lt;span style="color:#ae81ff">2&lt;/span>,&lt;span style="color:#ae81ff">3&lt;/span>),(&lt;span style="color:#ae81ff">3&lt;/span>,&lt;span style="color:#ae81ff">2&lt;/span>),(&lt;span style="color:#ae81ff">4&lt;/span>,&lt;span style="color:#ae81ff">3&lt;/span>),(&lt;span style="color:#ae81ff">5&lt;/span>,&lt;span style="color:#ae81ff">2&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- REPEATABLE READ (por defecto)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> t &lt;span style="color:#66d9ef">SET&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">5&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">3&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Escanea y bloquea TODAS las filas, retiene todos los locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- READ COMMITTED
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SET&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span> &lt;span style="color:#66d9ef">ISOLATION&lt;/span> &lt;span style="color:#66d9ef">LEVEL&lt;/span> &lt;span style="color:#66d9ef">READ&lt;/span> &lt;span style="color:#66d9ef">COMMITTED&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> t &lt;span style="color:#66d9ef">SET&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">5&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">3&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Escanea todas las filas pero:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 1. Libera locks de filas que NO modifica
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 2. Solo retiene locks de filas actualizadas
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 3. Permite mayor concurrencia
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Semi-consistent reads en READ COMMITTED:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A (READ COMMITTED)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> balance &lt;span style="color:#f92672">+&lt;/span> &lt;span style="color:#ae81ff">100&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;active&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B (concurrent)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;inactive&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- En READ COMMITTED:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 1. Sesión A lee la versión committed más reciente para evaluar WHERE
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 2. Si el registro ya no cumple la condición, lo omite sin bloquear
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 3. Si cumple, adquiere lock y procede con UPDATE
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="read-uncommitted">&lt;a href="#read-uncommitted" class="header-anchor">&lt;/a>&lt;strong>READ UNCOMMITTED&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Comportamiento de locks:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>Los &lt;code>SELECT&lt;/code> statements se ejecutan de manera &lt;strong>no bloqueante&lt;/strong>&lt;/li>
+&lt;li>Pueden leer versiones anteriores (no committed) de las filas&lt;/li>
+&lt;li>Estas lecturas &lt;strong>no son consistentes&lt;/strong> - dirty reads&lt;/li>
+&lt;li>Para el resto de operaciones funciona como &lt;strong>READ COMMITTED&lt;/strong>&lt;/li>
+&lt;/ul>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">5000&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- NO hace commit aún
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B (READ UNCOMMITTED)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SET&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span> &lt;span style="color:#66d9ef">ISOLATION&lt;/span> &lt;span style="color:#66d9ef">LEVEL&lt;/span> &lt;span style="color:#66d9ef">READ&lt;/span> &lt;span style="color:#66d9ef">UNCOMMITTED&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> balance &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Puede leer 5000 (valor no committed)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Si A hace ROLLBACK, nunca existió realmente ese valor
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Para INSERTs, UPDATEs, DELETEs: comportamiento igual que READ COMMITTED
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">1000&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">456&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Solo bloquea registros que modifica, libera locks de no-matches
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="serializable">&lt;a href="#serializable" class="header-anchor">&lt;/a>&lt;strong>SERIALIZABLE&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Comportamiento especial según autocommit:&lt;/strong>&lt;/p>
+&lt;p>&lt;strong>Con autocommit deshabilitado:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SET&lt;/span> autocommit &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">0&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Los SELECT planos se convierten automáticamente en SELECT FOR SHARE
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- InnoDB lo convierte implícitamente a:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">SHARE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Esto significa que adquiere shared locks y puede bloquear otras transacciones
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Con autocommit habilitado (por defecto):&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SET&lt;/span> autocommit &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">1&lt;/span>; &lt;span style="color:#75715e">-- Valor por defecto
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- El SELECT es su propia transacción
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Se ejecuta como lectura consistente no bloqueante
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- NO necesita bloquear otras transacciones
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Puede ser serializado sin problemas de concurrencia
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Forzar bloqueo en SERIALIZABLE:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Para forzar que un SELECT bloque si otras transacciones
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- han modificado las filas seleccionadas:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SET&lt;/span> autocommit &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">0&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ahora SÍ bloquea (convierte a FOR SHARE automáticamente)
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Excepción para Grant Tables:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Las operaciones DML que leen de las tablas de grants de MySQL
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- NO adquieren read locks en las grant tables, independientemente
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- del nivel de aislamiento
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ejemplo: esta consulta NO bloquea las tablas mysql.user, mysql.db, etc.
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> u.name
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">FROM&lt;/span> users u
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">JOIN&lt;/span> mysql.&lt;span style="color:#66d9ef">user&lt;/span> mu &lt;span style="color:#66d9ef">ON&lt;/span> u.username &lt;span style="color:#f92672">=&lt;/span> mu.&lt;span style="color:#66d9ef">User&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">WHERE&lt;/span> u.status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;active&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Esto es para evitar bloqueos en operaciones de seguridad/permisos
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="configuración-de-niveles-de-aislamiento">&lt;a href="#configuraci%c3%b3n-de-niveles-de-aislamiento" class="header-anchor">&lt;/a>&lt;strong>Configuración de Niveles de Aislamiento&lt;/strong>
+&lt;/h3>&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Para la sesión actual
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SET&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span> &lt;span style="color:#66d9ef">ISOLATION&lt;/span> &lt;span style="color:#66d9ef">LEVEL&lt;/span> &lt;span style="color:#66d9ef">READ&lt;/span> &lt;span style="color:#66d9ef">COMMITTED&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Para todas las conexiones siguientes
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SET&lt;/span> &lt;span style="color:#66d9ef">GLOBAL&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span> &lt;span style="color:#66d9ef">ISOLATION&lt;/span> &lt;span style="color:#66d9ef">LEVEL&lt;/span> &lt;span style="color:#66d9ef">READ&lt;/span> &lt;span style="color:#66d9ef">COMMITTED&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Al iniciar el servidor
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>mysqld &lt;span style="color:#75715e">--transaction-isolation=READ-COMMITTED
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Verificar nivel actual
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">@@&lt;/span>transaction_isolation;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="consideraciones-importantes">&lt;a href="#consideraciones-importantes" class="header-anchor">&lt;/a>&lt;strong>Consideraciones Importantes&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>⚠️ Mixing Locking and Non-locking Statements:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- NO recomendado en REPEATABLE READ
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> balance &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>; &lt;span style="color:#75715e">-- Non-locking
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">1000&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>; &lt;span style="color:#75715e">-- Locking
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Estados de tabla inconsistentes
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>🎯 Caso de uso con índices:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">CREATE&lt;/span> &lt;span style="color:#66d9ef">TABLE&lt;/span> t (a INT &lt;span style="color:#66d9ef">NOT&lt;/span> &lt;span style="color:#66d9ef">NULL&lt;/span>, b INT, &lt;span style="color:#66d9ef">c&lt;/span> INT, &lt;span style="color:#66d9ef">INDEX&lt;/span> (b)) ENGINE &lt;span style="color:#f92672">=&lt;/span> InnoDB;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> t &lt;span style="color:#66d9ef">SET&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">3&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">2&lt;/span> &lt;span style="color:#66d9ef">AND&lt;/span> &lt;span style="color:#66d9ef">c&lt;/span> &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">3&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Solo considera la columna indexada (b) para locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B se bloquea porque también usa el índice en columna b
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> t &lt;span style="color:#66d9ef">SET&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">4&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">2&lt;/span> &lt;span style="color:#66d9ef">AND&lt;/span> &lt;span style="color:#66d9ef">c&lt;/span> &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">4&lt;/span>;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="gap-locks-y-next-key-locks-prevención-de-phantom-reads">&lt;a href="#gap-locks-y-next-key-locks-prevenci%c3%b3n-de-phantom-reads" class="header-anchor">&lt;/a>&lt;strong>Gap Locks y Next-Key Locks: Prevención de Phantom Reads&lt;/strong>
+&lt;/h2>&lt;p>Los gap locks y next-key locks son mecanismos específicos de InnoDB para prevenir phantom reads y mantener la consistencia en REPEATABLE READ.&lt;/p>
+&lt;h3 id="qué-son-los-gap-locks">&lt;a href="#qu%c3%a9-son-los-gap-locks" class="header-anchor">&lt;/a>&lt;strong>¿Qué son los Gap Locks?&lt;/strong>
+&lt;/h3>&lt;p>Un &lt;strong>gap lock&lt;/strong> bloquea el espacio entre registros de índice, NO los registros en sí mismos. Su único propósito es &lt;strong>prevenir que otras transacciones inserten nuevos registros&lt;/strong> en ese gap.&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ejemplo con índice en columna &amp;#39;id&amp;#39;
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Registros existentes: id = 10, 20, 30
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">&amp;gt;&lt;/span> &lt;span style="color:#ae81ff">15&lt;/span> &lt;span style="color:#66d9ef">AND&lt;/span> id &lt;span style="color:#f92672">&amp;lt;&lt;/span> &lt;span style="color:#ae81ff">25&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Gap locks aplicados:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Gap antes de id=20: (15, 20)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Previene INSERT de id=16,17,18,19
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- NO bloquea el registro id=20 en sí
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Características importantes:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>✅ Múltiples transacciones pueden tener gap locks en el mismo gap&lt;/li>
+&lt;li>✅ Gap locks son &lt;strong>compatibles entre sí&lt;/strong>&lt;/li>
+&lt;li>❌ &lt;strong>Solo previenen INSERTs&lt;/strong>, no afectan SELECTs ni UPDATEs de registros existentes&lt;/li>
+&lt;/ul>
+&lt;h3 id="qué-son-los-next-key-locks">&lt;a href="#qu%c3%a9-son-los-next-key-locks" class="header-anchor">&lt;/a>&lt;strong>¿Qué son los Next-Key Locks?&lt;/strong>
+&lt;/h3>&lt;p>Un &lt;strong>next-key lock&lt;/strong> combina:&lt;/p>
+&lt;ul>
+&lt;li>&lt;strong>Record lock&lt;/strong> en el registro actual&lt;/li>
+&lt;li>&lt;strong>Gap lock&lt;/strong> en el gap antes del registro&lt;/li>
+&lt;/ul>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Registros: id = 10, 20, 30, 40
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">&amp;lt;=&lt;/span> &lt;span style="color:#ae81ff">25&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Next-key locks aplicados:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (-∞, 10] + record lock en id=10
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (10, 20] + record lock en id=20
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (20, 30] - solo gap lock (no incluye id=30)
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="ejemplos-prácticos-detallados">&lt;a href="#ejemplos-pr%c3%a1cticos-detallados" class="header-anchor">&lt;/a>&lt;strong>Ejemplos Prácticos Detallados&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Ejemplo 1: Gap Lock en Acción&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">CREATE&lt;/span> &lt;span style="color:#66d9ef">TABLE&lt;/span> products (
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> id INT &lt;span style="color:#66d9ef">PRIMARY&lt;/span> &lt;span style="color:#66d9ef">KEY&lt;/span>,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> category VARCHAR(&lt;span style="color:#ae81ff">50&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> price DECIMAL(&lt;span style="color:#ae81ff">10&lt;/span>,&lt;span style="color:#ae81ff">2&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">INDEX&lt;/span> idx_price (price)
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>(&lt;span style="color:#ae81ff">1&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>.&lt;span style="color:#ae81ff">00&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>(&lt;span style="color:#ae81ff">2&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">300&lt;/span>.&lt;span style="color:#ae81ff">00&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>(&lt;span style="color:#ae81ff">3&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">500&lt;/span>.&lt;span style="color:#ae81ff">00&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> price &lt;span style="color:#f92672">&amp;gt;&lt;/span> &lt;span style="color:#ae81ff">200&lt;/span> &lt;span style="color:#66d9ef">AND&lt;/span> price &lt;span style="color:#f92672">&amp;lt;&lt;/span> &lt;span style="color:#ae81ff">400&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Aplica gap lock en el rango (200, 300) y (300, 400)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B - Esta INSERT se BLOQUEA
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">4&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">250&lt;/span>.&lt;span style="color:#ae81ff">00&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Se bloquea porque 250 está en el gap (200, 300)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión C - Esta INSERT funciona
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">5&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">600&lt;/span>.&lt;span style="color:#ae81ff">00&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- OK porque 600 no está en ningún gap bloqueado
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Ejemplo 2: Next-Key Lock Completo&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Datos: user_id = 5, 10, 15, 20
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> user_id &lt;span style="color:#f92672">&amp;lt;=&lt;/span> &lt;span style="color:#ae81ff">12&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Next-key locks aplicados:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (-∞, 5] : gap (-∞, 5) + record lock en 5
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (5, 10] : gap (5, 10) + record lock en 10
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (10, 15) : solo gap lock hasta 12
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Otros comportamientos:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- ✅ SELECT user_id=15 permitido (no tiene record lock)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- ❌ INSERT user_id=7 bloqueado (está en gap (5,10))
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- ❌ UPDATE user_id=10 bloqueado (tiene record lock)
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="insert-y-gap-locks">&lt;a href="#insert-y-gap-locks" class="header-anchor">&lt;/a>&lt;strong>INSERT y Gap Locks:&lt;/strong>
+&lt;/h3>&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Datos existentes: id = 10, 20, 30
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> products &lt;span style="color:#66d9ef">SET&lt;/span> price &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">200&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#66d9ef">BETWEEN&lt;/span> &lt;span style="color:#ae81ff">15&lt;/span> &lt;span style="color:#66d9ef">AND&lt;/span> &lt;span style="color:#ae81ff">25&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Aplica gap locks en (10,20) y (20,30)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B - estos INSERTs se BLOQUEAN
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">12&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;test&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>); &lt;span style="color:#75715e">-- Bloqueado por gap (10,20)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">22&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;test&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>); &lt;span style="color:#75715e">-- Bloqueado por gap (20,30)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión C - este INSERT funciona
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">35&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;test&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>); &lt;span style="color:#75715e">-- OK, fuera de gaps bloqueados
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="casos-especiales-y-optimizaciones">&lt;a href="#casos-especiales-y-optimizaciones" class="header-anchor">&lt;/a>&lt;strong>Casos Especiales y Optimizaciones&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Búsqueda por Clave Única&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Índice único en email
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> email &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;user@example.com&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Solo record lock, NO gap lock
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- InnoDB sabe que es único, no hay riesgo de phantoms
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Búsqueda que No Encuentra Registros&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- No hay registros con price = 250
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> price &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">250&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Aplica gap lock en el gap donde estaría price=250
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Previene INSERT de price=250 hasta commit
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="cuándo-se-desactivan-los-gap-locks">&lt;a href="#cu%c3%a1ndo-se-desactivan-los-gap-locks" class="header-anchor">&lt;/a>&lt;strong>Cuándo se Desactivan los Gap Locks&lt;/strong>
+&lt;/h3>&lt;p>Los gap locks se &lt;strong>desactivan&lt;/strong> automáticamente en:&lt;/p>
+&lt;ol>
+&lt;li>&lt;strong>READ COMMITTED&lt;/strong>: Solo para statement locking normal&lt;/li>
+&lt;li>&lt;strong>Foreign Key Constraints&lt;/strong>: Siempre activos para verificación de integridad&lt;/li>
+&lt;li>&lt;strong>Duplicate Key Checking&lt;/strong>: Siempre activos para prevenir duplicados&lt;/li>
+&lt;/ol>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- En READ COMMITTED, esto NO usa gap locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> products &lt;span style="color:#66d9ef">SET&lt;/span> price &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">200&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Pero esto SÍ usa gap locks (foreign key constraint)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> order_items (product_id) &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">999&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Verifica que product_id=999 existe y no se puede eliminar
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="monitoring-completo-de-locks">&lt;a href="#monitoring-completo-de-locks" class="header-anchor">&lt;/a>&lt;strong>Monitoring Completo de Locks&lt;/strong>
+&lt;/h3>&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ver todos los locks activos (no solo FOR UPDATE)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> object_schema,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> object_name,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_type,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_mode,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_status,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_data,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> engine_transaction_id
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">FROM&lt;/span> performance_schema.data_locks;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ver gap locks específicamente
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> performance_schema.data_locks
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">WHERE&lt;/span> lock_type &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;GAP&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">OR&lt;/span> lock_type &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;REC_NOT_GAP&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ver locks en espera (deadlock detection)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> r.trx_id waiting_transaction,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> r.trx_mysql_thread_id waiting_thread,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> r.trx_query waiting_query,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> b.trx_id blocking_transaction,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> b.trx_mysql_thread_id blocking_thread,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> b.trx_query blocking_query
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">FROM&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> information_schema.innodb_lock_waits w
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">JOIN&lt;/span> information_schema.innodb_trx b &lt;span style="color:#66d9ef">ON&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> b.trx_id &lt;span style="color:#f92672">=&lt;/span> w.blocking_trx_id
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">JOIN&lt;/span> information_schema.innodb_trx r &lt;span style="color:#66d9ef">ON&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> r.trx_id &lt;span style="color:#f92672">=&lt;/span> w.requesting_trx_id;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- InnoDB status para análisis detallado
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SHOW&lt;/span> ENGINE INNODB STATUS&lt;span style="color:#960050;background-color:#1e0010">\&lt;/span>&lt;span style="color:#66d9ef">G&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="recomendaciones-por-caso-de-uso">&lt;a href="#recomendaciones-por-caso-de-uso" class="header-anchor">&lt;/a>&lt;strong>Recomendaciones por Caso de Uso&lt;/strong>
+&lt;/h3>&lt;table>
+&lt;thead>
+&lt;tr>
+&lt;th>Escenario&lt;/th>
+&lt;th>Nivel Recomendado&lt;/th>
+&lt;th>Razón&lt;/th>
+&lt;/tr>
+&lt;/thead>
+&lt;tbody>
+&lt;tr>
+&lt;td>&lt;strong>E-commerce con alta concurrencia&lt;/strong>&lt;/td>
+&lt;td>READ COMMITTED&lt;/td>
+&lt;td>Menos deadlocks en INSERTs de productos/órdenes&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Sistemas financieros&lt;/strong>&lt;/td>
+&lt;td>REPEATABLE READ&lt;/td>
+&lt;td>Consistencia crítica en transferencias&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Aplicaciones con muchos INSERTs concurrentes&lt;/strong>&lt;/td>
+&lt;td>READ COMMITTED&lt;/td>
+&lt;td>Evita bloqueos por gap locks&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Reportes que requieren consistencia total&lt;/strong>&lt;/td>
+&lt;td>REPEATABLE READ o SERIALIZABLE&lt;/td>
+&lt;td>Snapshot consistente durante toda la consulta&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Sistemas de auditoría&lt;/strong>&lt;/td>
+&lt;td>SERIALIZABLE&lt;/td>
+&lt;td>Máxima consistencia&lt;/td>
+&lt;/tr>
+&lt;/tbody>
+&lt;/table>
+&lt;h2 id="referencias">&lt;a href="#referencias" class="header-anchor">&lt;/a>Referencias
+&lt;/h2>&lt;p>&lt;a class="link" href="https://engineeringatscale.substack.com/p/acid-properties-databases-explained" target="_blank" rel="noopener"
+>https://engineeringatscale.substack.com/p/acid-properties-databases-explained&lt;/a>&lt;/p>
+&lt;p>&lt;a class="link" href="https://medium.com/@aryadyas/understanding-database-transactions-how-they-work-and-where-they-matter-a00a65a94c14" target="_blank" rel="noopener"
+>https://medium.com/@aryadyas/understanding-database-transactions-how-they-work-and-where-they-matter-a00a65a94c14&lt;/a>&lt;/p>
+&lt;p>&lt;a class="link" href="https://www.thenile.dev/blog/transaction-isolation-postgres" target="_blank" rel="noopener"
+>https://www.thenile.dev/blog/transaction-isolation-postgres&lt;/a>&lt;/p>
+&lt;p>&lt;a class="link" href="https://antondevtips.com/blog/complete-guide-to-transaction-isolation-levels-in-sql" target="_blank" rel="noopener"
+>https://antondevtips.com/blog/complete-guide-to-transaction-isolation-levels-in-sql&lt;/a>&lt;/p>
+&lt;hr></description></item><item><title>Apache Kafka para desarrolladores</title><link>https://alvarorosado.es/posts/2025-05-21-apachekafkaparadesarrolladores/</link><pubDate>Wed, 21 May 2025 15:43:00 -0600</pubDate><guid>https://alvarorosado.es/posts/2025-05-21-apachekafkaparadesarrolladores/</guid><description>&lt;p>Si alguna vez te has sentido perdido con Apache Kafka, no estás solo. Tal vez tu jefe lo mencionó como la solución a todos los problemas y solo asentiste, o estás en un proyecto con Kafka y cada error te deja desorientado. Incluso la documentación oficial puede resultar confusa. Si esto te suena, este artículo es para ti. Vamos a explicar Kafka de forma clara, sin tecnicismos innecesarios y con ejemplos prácticos.&lt;/p>
+&lt;h2 id="qué-es-kafka-y-para-qué-sirve">&lt;a href="#qu%c3%a9-es-kafka-y-para-qu%c3%a9-sirve" class="header-anchor">&lt;/a>¿Qué es Kafka y para qué sirve?
+&lt;/h2>&lt;p>Kafka es el sistema que conecta aplicaciones modernas. Imagina una empresa donde cada departamento —ventas, contabilidad, logística, marketing— necesita saber qué pasa en los demás. Cuando hay una venta, contabilidad registra el ingreso, el almacén prepara el envío y marketing envía un correo. En lugar de que todos se comuniquen directamente (un desastre), Kafka actúa como un tablón de anuncios: cada área publica sus eventos y se suscribe a los que le interesan.&lt;/p>
+&lt;p>Esto no solo sirve para empresas, sino para microservicios, dispositivos IoT, análisis en tiempo real o procesamiento de datos masivos. Kafka organiza este flujo de información de manera rápida y confiable.&lt;/p>
+&lt;h2 id="los-elementos-clave-de-kafka">&lt;a href="#los-elementos-clave-de-kafka" class="header-anchor">&lt;/a>Los elementos clave de Kafka
+&lt;/h2>&lt;p>Para entender Kafka, necesitas conocer sus componentes principales:&lt;/p>
+&lt;ul>
+&lt;li>&lt;strong>Topics y particiones&lt;/strong>: Donde se almacenan los mensajes.&lt;/li>
+&lt;li>&lt;strong>Productores&lt;/strong>: Quienes envían los mensajes.&lt;/li>
+&lt;li>&lt;strong>Consumidores&lt;/strong>: Quienes leen los mensajes.&lt;/li>
+&lt;li>&lt;strong>Brokers&lt;/strong>: Los servidores que gestionan el sistema.&lt;/li>
+&lt;/ul>
+&lt;p>Lo explicaremos con una metáfora sencilla: un almacén de documentos muy eficiente.&lt;/p>
+&lt;h2 id="el-almacén-de-kafka">&lt;a href="#el-almac%c3%a9n-de-kafka" class="header-anchor">&lt;/a>El almacén de Kafka
+&lt;/h2>&lt;p>Imagina que gestionas un almacén de documentos bien organizado. Este almacén es Kafka.&lt;/p>
+&lt;h3 id="estanterías-y-cajones">&lt;a href="#estanter%c3%adas-y-cajones" class="header-anchor">&lt;/a>Estanterías y cajones
+&lt;/h3>&lt;p>Tienes estanterías especializadas para diferentes tipos de documentos: una para &amp;ldquo;Facturas&amp;rdquo;, otra para &amp;ldquo;Pedidos&amp;rdquo;, otra para &amp;ldquo;Alertas de inventario&amp;rdquo;. Cada estantería es un &lt;strong>topic&lt;/strong>. Cada una se divide en cajones numerados, que son las &lt;strong>particiones&lt;/strong>. Por ejemplo, si esperas muchas facturas, creas una estantería con cinco cajones; si las alertas son pocas, dos cajones bastan.&lt;/p>
+&lt;p>Los cajones permiten que varios empleados trabajen en paralelo, cada uno en un cajón, sin interferencias. Más cajones significan más velocidad.&lt;/p>
+&lt;h3 id="el-encargado">&lt;a href="#el-encargado" class="header-anchor">&lt;/a>El encargado
+&lt;/h3>&lt;p>En la entrada hay un encargado (el &lt;strong>broker&lt;/strong>) que lo controla todo:&lt;/p>
+&lt;ul>
+&lt;li>Recibe cualquier documento y sabe en qué estantería y cajón guardarlo.&lt;/li>
+&lt;li>Nunca pierde nada.&lt;/li>
+&lt;li>Ordena los documentos por orden de llegada.&lt;/li>
+&lt;li>Recuerda qué documentos ha entregado a cada equipo.&lt;/li>
+&lt;/ul>
+&lt;p>En un sistema real, un clúster de Kafka tiene varios &lt;em>brokers&lt;/em> que distribuyen la carga.&lt;/p>
+&lt;h3 id="los-repartidores">&lt;a href="#los-repartidores" class="header-anchor">&lt;/a>Los repartidores
+&lt;/h3>&lt;p>Cuando la empresa genera un documento (una venta, un pedido, una alerta), un repartidor (el &lt;strong>productor&lt;/strong>) lo lleva al almacén. El encargado lo archiva en el cajón correcto, manteniendo el orden cronológico.&lt;/p>
+&lt;h2 id="procesamiento-de-documentos">&lt;a href="#procesamiento-de-documentos" class="header-anchor">&lt;/a>Procesamiento de documentos
+&lt;/h2>&lt;h3 id="el-equipo-de-contabilidad">&lt;a href="#el-equipo-de-contabilidad" class="header-anchor">&lt;/a>El equipo de contabilidad
+&lt;/h3>&lt;p>Cada semana, llega un equipo de contabilidad con tres personas que piden las facturas nuevas. El encargado asigna tareas:&lt;/p>
+&lt;ul>
+&lt;li>&amp;ldquo;María, revisa el cajón 1 de facturas.&amp;rdquo;&lt;/li>
+&lt;li>&amp;ldquo;Carlos, el cajón 2.&amp;rdquo;&lt;/li>
+&lt;li>&amp;ldquo;Ana, el cajón 3.&amp;rdquo;&lt;/li>
+&lt;/ul>
+&lt;p>Cada uno trabaja en su cajón sin interferir. En Kafka, este equipo es un &lt;strong>Consumer Group&lt;/strong>, y cada persona es un &lt;strong>Consumidor&lt;/strong>. Los consumidores dividen el trabajo para procesar las particiones en paralelo.&lt;/p>
+&lt;h3 id="la-memoria-del-encargado">&lt;a href="#la-memoria-del-encargado" class="header-anchor">&lt;/a>La memoria del encargado
+&lt;/h3>&lt;p>El encargado sabe exactamente cuál fue el último documento entregado a cada equipo. Cuando regresan, retoman donde lo dejaron. En Kafka, esto es el &lt;strong>offset&lt;/strong>: la posición exacta en la partición donde un consumidor dejó de leer.&lt;/p>
+&lt;h2 id="qué-pasa-si-algo-falla">&lt;a href="#qu%c3%a9-pasa-si-algo-falla" class="header-anchor">&lt;/a>¿Qué pasa si algo falla?
+&lt;/h2>&lt;h3 id="si-alguien-falta">&lt;a href="#si-alguien-falta" class="header-anchor">&lt;/a>Si alguien falta
+&lt;/h3>&lt;p>Si un día Carlos no viene, el encargado redistribuye el trabajo:&lt;/p>
+&lt;ul>
+&lt;li>&amp;ldquo;María, además del cajón 1, hoy te encargas del cajón 2.&amp;rdquo;&lt;/li>
+&lt;li>&amp;ldquo;Ana, sigue con el cajón 3.&amp;rdquo;&lt;/li>
+&lt;/ul>
+&lt;p>Nada se queda sin procesar. En Kafka, esto es el &lt;strong>rebalanceo automático&lt;/strong>: si un consumidor falla, los demás se reparten sus particiones.&lt;/p>
+&lt;h3 id="si-se-pierde-un-documento">&lt;a href="#si-se-pierde-un-documento" class="header-anchor">&lt;/a>Si se pierde un documento
+&lt;/h3>&lt;p>Si un cajón se daña, el encargado usa copias de seguridad almacenadas en otros almacenes (otros &lt;em>brokers&lt;/em>). En Kafka, estas &lt;strong>réplicas&lt;/strong> aseguran que los datos estén duplicados para evitar pérdidas.&lt;/p>
+&lt;h2 id="cómo-se-mantiene-el-orden">&lt;a href="#c%c3%b3mo-se-mantiene-el-orden" class="header-anchor">&lt;/a>Cómo se mantiene el orden
+&lt;/h2>&lt;h3 id="organización-de-documentos">&lt;a href="#organizaci%c3%b3n-de-documentos" class="header-anchor">&lt;/a>Organización de documentos
+&lt;/h3>&lt;p>Cada documento lleva una etiqueta (la &lt;strong>key&lt;/strong> en Kafka), como el ID de un cliente. El encargado usa una fórmula para decidir en qué cajón va. La misma etiqueta siempre va al mismo cajón, garantizando que los documentos relacionados (por ejemplo, todas las facturas del cliente &amp;ldquo;12345&amp;rdquo;) estén juntos y en orden cronológico.&lt;/p>
+&lt;h3 id="la-regla-del-orden">&lt;a href="#la-regla-del-orden" class="header-anchor">&lt;/a>La regla del orden
+&lt;/h3>&lt;p>Kafka solo garantiza orden dentro de una partición. Si necesitas orden global, usa una sola partición, pero esto limita el paralelismo, ya que solo un consumidor podrá procesarla. Es un equilibrio entre orden y velocidad:&lt;/p>
+&lt;ul>
+&lt;li>&lt;strong>Más particiones&lt;/strong>: Mayor paralelismo, más velocidad.&lt;/li>
+&lt;li>&lt;strong>Menos particiones&lt;/strong>: Mayor orden, menos velocidad.&lt;/li>
+&lt;/ul>
+&lt;p>El número de particiones determina el máximo de consumidores que pueden trabajar en paralelo.&lt;/p>
+&lt;h2 id="limpieza-del-almacén">&lt;a href="#limpieza-del-almac%c3%a9n" class="header-anchor">&lt;/a>Limpieza del almacén
+&lt;/h2>&lt;p>El almacén no puede crecer infinitamente. El encargado usa dos métodos para mantenerlo manejable:&lt;/p>
+&lt;ul>
+&lt;li>&lt;strong>Por tiempo&lt;/strong>: Los documentos antiguos (por ejemplo, de más de 7 días) se eliminan. En Kafka, esto se configura con &lt;code>retention.ms&lt;/code>. Es ideal para logs o eventos temporales.&lt;/li>
+&lt;li>&lt;strong>Por clave&lt;/strong>: Se guarda solo el documento más reciente para cada etiqueta. Por ejemplo, el último estado de un pedido. Esto se activa con &lt;code>cleanup.policy=compact&lt;/code> y es perfecto para datos como precios o ubicaciones.&lt;/li>
+&lt;/ul>
+&lt;h2 id="consejos-prácticos">&lt;a href="#consejos-pr%c3%a1cticos" class="header-anchor">&lt;/a>Consejos prácticos
+&lt;/h2>&lt;ol>
+&lt;li>&lt;strong>Elige bien las claves&lt;/strong>:&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>Usar la misma clave envía todo a una partición, limitando el paralelismo.&lt;/li>
+&lt;li>Sin claves, Kafka distribuye mensajes aleatoriamente.&lt;/li>
+&lt;li>Usa claves que agrupen datos según tus necesidades.&lt;/li>
+&lt;/ul>
+&lt;ol start="2">
+&lt;li>&lt;strong>Planifica las particiones&lt;/strong>:&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>Aumentar particiones es fácil; reducirlas es complicado.&lt;/li>
+&lt;li>Calcula cuántos consumidores necesitarás en el peor caso.&lt;/li>
+&lt;/ul>
+&lt;ol start="3">
+&lt;li>&lt;strong>Usa &lt;em>topics&lt;/em> con criterio&lt;/strong>:&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>Crea un &lt;em>topic&lt;/em> por concepto claro (por ejemplo, &amp;ldquo;pedidos&amp;rdquo; o &amp;ldquo;transacciones&amp;rdquo;).&lt;/li>
+&lt;li>Usa nombres descriptivos y consistentes.&lt;/li>
+&lt;li>No mezcles conceptos en un mismo &lt;em>topic&lt;/em>.&lt;/li>
+&lt;/ul>
+&lt;ol start="4">
+&lt;li>&lt;strong>Gestiona versiones de mensajes&lt;/strong>:&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>Los formatos de mensajes cambian con el tiempo.&lt;/li>
+&lt;li>Usa herramientas como Schema Registry con Avro o Protobuf para versionado.&lt;/li>
+&lt;li>Asegúrate de que los cambios sean compatibles hacia atrás y hacia adelante.&lt;/li>
+&lt;/ul>
+&lt;h2 id="casos-de-uso">&lt;a href="#casos-de-uso" class="header-anchor">&lt;/a>Casos de uso
+&lt;/h2>&lt;ul>
+&lt;li>&lt;strong>E-commerce&lt;/strong>: Un &lt;em>topic&lt;/em> &amp;ldquo;pedidos&amp;rdquo; registra compras. Los consumidores actualizan inventario, generan facturas, preparan envíos o envían recomendaciones.&lt;/li>
+&lt;li>&lt;strong>Banca&lt;/strong>: Un &lt;em>topic&lt;/em> &amp;ldquo;transacciones&amp;rdquo; captura movimientos. Los consumidores detectan fraudes, registran en contabilidad o envían notificaciones.&lt;/li>
+&lt;li>&lt;strong>IoT&lt;/strong>: Un &lt;em>topic&lt;/em> &amp;ldquo;sensores&amp;rdquo; recoge datos como temperatura. Los consumidores generan alertas, analizan históricos o alimentan modelos de machine learning.&lt;/li>
+&lt;/ul>
+&lt;h2 id="resumen-kafka-vs-almacén">&lt;a href="#resumen-kafka-vs-almac%c3%a9n" class="header-anchor">&lt;/a>Resumen: Kafka vs. Almacén
+&lt;/h2>&lt;table>
+&lt;thead>
+&lt;tr>
+&lt;th>Concepto Kafka&lt;/th>
+&lt;th>Metáfora del almacén&lt;/th>
+&lt;th>Para qué sirve&lt;/th>
+&lt;/tr>
+&lt;/thead>
+&lt;tbody>
+&lt;tr>
+&lt;td>&lt;strong>Cluster&lt;/strong>&lt;/td>
+&lt;td>Almacén completo&lt;/td>
+&lt;td>Sistema Kafka en conjunto&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Broker&lt;/strong>&lt;/td>
+&lt;td>Encargado&lt;/td>
+&lt;td>Servidor que gestiona mensajes&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Topic&lt;/strong>&lt;/td>
+&lt;td>Estantería&lt;/td>
+&lt;td>Categoría de mensajes&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Partition&lt;/strong>&lt;/td>
+&lt;td>Cajón&lt;/td>
+&lt;td>División para paralelismo&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Producer&lt;/strong>&lt;/td>
+&lt;td>Repartidor&lt;/td>
+&lt;td>Aplicación que envía mensajes&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Consumer&lt;/strong>&lt;/td>
+&lt;td>Contable&lt;/td>
+&lt;td>Aplicación que lee mensajes&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Consumer Group&lt;/strong>&lt;/td>
+&lt;td>Equipo de contables&lt;/td>
+&lt;td>Grupo de consumidores colaborando&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Offset&lt;/strong>&lt;/td>
+&lt;td>Último documento revisado&lt;/td>
+&lt;td>Posición de lectura&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Key&lt;/strong>&lt;/td>
+&lt;td>Etiqueta del documento&lt;/td>
+&lt;td>Criterio de particionamiento&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Replication&lt;/strong>&lt;/td>
+&lt;td>Copias en otros almacenes&lt;/td>
+&lt;td>Redundancia para disponibilidad&lt;/td>
+&lt;/tr>
+&lt;/tbody>
+&lt;/table></description></item><item><title>Archives</title><link>https://alvarorosado.es/page/archives/</link><pubDate>Fri, 10 Nov 2023 00:00:00 +0000</pubDate><guid>https://alvarorosado.es/page/archives/</guid><description/></item><item><title>OpenBlur</title><link>https://alvarorosado.es/page/tools/openblur/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://alvarorosado.es/page/tools/openblur/</guid><description>&lt;img src="https://alvarorosado.es/page/tools/openblur/blurry_1024.png" alt="Featured image of post OpenBlur" />&lt;p>Hide and blur sensitive information on any webpage using the
+&lt;a class="link" href="https://chromewebstore.google.com/detail/dlnglldcaegkgmhmmhhdknblccppichf" target="_blank" rel="noopener"
+>OpenBlur Chrome extension&lt;/a>. Blur your
+secrets such as personal emails, public IP addresses, and more.&lt;/p>
+&lt;figure>&lt;img src="https://alvarorosado.es/page/tools/openblur/openblur-screenshot.png"
+alt="OpenBlur screenshot">&lt;figcaption>
+&lt;h4>OpenBlur screenshot&lt;/h4>
+&lt;/figcaption>
+&lt;/figure>
+&lt;p>OpenBlur is an open source project. It is under active development. Contributions and feedback are welcome.&lt;/p>
+&lt;p>GitHub repo: &lt;a class="link" href="https://github.com/getvictor/openblur" target="_blank" rel="noopener"
+>https://github.com/getvictor/openblur&lt;/a>&lt;/p>
+&lt;h2 id="installation">&lt;a href="#installation" class="header-anchor">&lt;/a>Installation
+&lt;/h2>&lt;h3 id="option-1-install-from-chrome-web-store">&lt;a href="#option-1-install-from-chrome-web-store" class="header-anchor">&lt;/a>Option 1. Install from Chrome Web Store
+&lt;/h3>&lt;p>&lt;a class="link" href="https://chromewebstore.google.com/detail/openblur/dlnglldcaegkgmhmmhhdknblccppichf" target="_blank" rel="noopener"
+>OpenBlur on Chrome Web Store&lt;/a>&lt;/p>
+&lt;h3 id="option-2-install-from-release-as-an-unpacked-extension">&lt;a href="#option-2-install-from-release-as-an-unpacked-extension" class="header-anchor">&lt;/a>Option 2. Install from release as an unpacked extension
+&lt;/h3>&lt;p>See &lt;a class="link" href="https://github.com/getvictor/openblur" target="_blank" rel="noopener"
+>OpenBlur GitHub repo for details&lt;/a>&lt;/p>
+&lt;h3 id="option-3-build-from-source">&lt;a href="#option-3-build-from-source" class="header-anchor">&lt;/a>Option 3. Build from source
+&lt;/h3>&lt;p>See &lt;a class="link" href="https://github.com/getvictor/openblur" target="_blank" rel="noopener"
+>OpenBlur GitHub repo for details&lt;/a>&lt;/p></description></item><item><title>Search</title><link>https://alvarorosado.es/page/search/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://alvarorosado.es/page/search/</guid><description/></item></channel></rss>

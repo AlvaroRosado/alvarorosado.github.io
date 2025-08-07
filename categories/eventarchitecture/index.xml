@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>EventArchitecture on Álvaro Rosado</title><link>https://alvarorosado.es/categories/eventarchitecture/</link><description>Recent content in EventArchitecture on Álvaro Rosado</description><generator>Hugo -- gohugo.io</generator><language>es-Es</language><lastBuildDate>Tue, 10 Jun 2025 15:43:00 -0600</lastBuildDate><atom:link href="https://alvarorosado.es/categories/eventarchitecture/index.xml" rel="self" type="application/rss+xml"/><item><title>Los problemas de Symfony Messenger con Kafka</title><link>https://alvarorosado.es/posts/2025-06-11-losproblemasdesymfonymessengerconkafka/</link><pubDate>Tue, 10 Jun 2025 15:43:00 -0600</pubDate><guid>https://alvarorosado.es/posts/2025-06-11-losproblemasdesymfonymessengerconkafka/</guid><description>&lt;p>Tras años trabajando con Apache Kafka y Symfony Messenger en entornos de producción, he llegado a una conclusión frustrante: los &lt;em>transports&lt;/em> actuales de Symfony Messenger no están diseñados para aprovechar al máximo las capacidades de Kafka. No es que estén mal implementados, sino que abordan el problema desde una perspectiva equivocada. Kafka es una plataforma de &lt;em>streaming&lt;/em> de eventos, no una cola de mensajes como RabbitMQ o Amazon SQS. Sin embargo, Symfony Messenger los trata de forma indistinta, lo que genera fricciones arquitecturales, código complicado y soluciones que no escalan bien.&lt;/p>
+&lt;h2 id="el-problema-de-base">&lt;a href="#el-problema-de-base" class="header-anchor">&lt;/a>El problema de base
+&lt;/h2>&lt;p>Kafka está diseñado para manejar &lt;strong>eventos en streaming&lt;/strong>, mientras que Redis, RabbitMQ o SQS son &lt;strong>colas de mensajes&lt;/strong>. Aunque parecen similares, sus propósitos y dinámicas son distintos. Symfony Messenger, al tratar a Kafka como una cola más, introduce problemas que se reflejan en configuraciones redundantes, lógica confusa y un mantenimiento innecesariamente complejo.&lt;/p>
+&lt;p>Imagina un &lt;em>topic&lt;/em> en Kafka llamado &lt;code>user_events&lt;/code>, que agrupa todos los eventos relacionados con usuarios: registros, actualizaciones, cambios de plan, eliminaciones, etc. Esto es típico en una arquitectura basada en eventos, donde los eventos relacionados coexisten en un mismo &lt;em>stream&lt;/em>. Ahora, supongamos que tienes varios servicios:&lt;/p>
+&lt;ul>
+&lt;li>El servicio de facturación solo necesita procesar eventos de tipo &lt;code>plan_changed&lt;/code>.&lt;/li>
+&lt;li>El servicio de notificaciones solo quiere los eventos &lt;code>user_registered&lt;/code>.&lt;/li>
+&lt;li>El servicio de analíticas necesita todos los eventos.&lt;/li>
+&lt;/ul>
+&lt;p>Con los &lt;em>transports&lt;/em> actuales de Symfony Messenger, te enfrentas a tres opciones, todas problemáticas:&lt;/p>
+&lt;ol>
+&lt;li>&lt;strong>Crear un &lt;em>transport&lt;/em> por tipo de evento&lt;/strong>: Esto lleva a tener decenas de &lt;em>transports&lt;/em>, cada uno escuchando un &lt;em>topic&lt;/em> diferente, lo que fragmenta la cohesión del &lt;em>stream&lt;/em> de eventos.&lt;/li>
+&lt;li>&lt;strong>Procesar todo y filtrar en el &lt;em>handler&lt;/em>&lt;/strong>: El servicio de facturación termina deserializando eventos irrelevantes, como registros de usuarios, lo que es ineficiente y complica la lógica.&lt;/li>
+&lt;li>&lt;strong>Usar un &lt;em>transport&lt;/em> genérico con lógica de enrutamiento personalizada&lt;/strong>: Esto resulta en código confuso, con lógica de enrutamiento dispersa que se vuelve inmantenible con el tiempo.&lt;/li>
+&lt;/ol>
+&lt;h2 id="la-interoperabilidad-y-la-serialización">&lt;a href="#la-interoperabilidad-y-la-serializaci%c3%b3n" class="header-anchor">&lt;/a>La interoperabilidad y la serialización
+&lt;/h2>&lt;p>Si tu aplicación produce y consume sus propios mensajes, la serialización PHP nativa de Symfony Messenger funciona sin problemas. Sin embargo, cuando varias aplicaciones (incluso si todas usan Symfony) necesitan interoperar, la cosa se complica. La serialización PHP depende de que el consumidor tenga acceso a las mismas clases PHP que generaron el mensaje. Por ejemplo, si el servicio de usuarios produce un evento &lt;code>App\Event\UserRegistered&lt;/code> y el servicio de facturación intenta deserializarlo, fallará si no tiene esa clase exacta.&lt;/p>
+&lt;p>Una solución aparente es usar JSON para serializar los mensajes, pero esto introduce otro problema:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-php" data-lang="php">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">// El servicio A produce un evento
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>$message &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#66d9ef">new&lt;/span> &lt;span style="color:#a6e22e">UserRegistered&lt;/span>($userId, $email);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">// Se serializa a JSON, pero...
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">// El mensaje llega al servicio B como:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>{&lt;span style="color:#e6db74">&amp;#34;user_id&amp;#34;&lt;/span>&lt;span style="color:#f92672">:&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>, &lt;span style="color:#e6db74">&amp;#34;email&amp;#34;&lt;/span>&lt;span style="color:#f92672">:&lt;/span> &lt;span style="color:#e6db74">&amp;#34;test@example.com&amp;#34;&lt;/span>}
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">// ¿Cómo sabe el servicio B qué clase instanciar? ¿UserRegistered? ¿UserCreated?
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Sin metadatos que indiquen el tipo de mensaje, el consumidor no tiene forma de interpretar correctamente el JSON recibido.&lt;/p>
+&lt;h2 id="configuraciones-redundantes">&lt;a href="#configuraciones-redundantes" class="header-anchor">&lt;/a>Configuraciones redundantes
+&lt;/h2>&lt;p>En un entorno real de Kafka (no en un &lt;em>docker-compose&lt;/em> local), las configuraciones son extensas: autenticación SASL, SSL, ajustes de rendimiento, &lt;em>timeouts&lt;/em>, etc. Con los &lt;em>transports&lt;/em> actuales, estas configuraciones se repiten para cada &lt;em>transport&lt;/em>, lo que genera duplicación innecesaria:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">user_events&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">options&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">config&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">security.protocol&lt;/span>: &lt;span style="color:#ae81ff">SASL_SSL&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.mechanisms&lt;/span>: &lt;span style="color:#ae81ff">PLAIN&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.username&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;%env(KAFKA_USER)%&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.password&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;%env(KAFKA_PASS)%&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">auto.offset.reset&lt;/span>: &lt;span style="color:#ae81ff">earliest&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">enable.auto.commit&lt;/span>: &lt;span style="color:#66d9ef">false&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># ... otras 20 líneas de configuración&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">order_events&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">options&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">config&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">security.protocol&lt;/span>: &lt;span style="color:#ae81ff">SASL_SSL &lt;/span> &lt;span style="color:#75715e"># Repetido&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.mechanisms&lt;/span>: &lt;span style="color:#ae81ff">PLAIN &lt;/span> &lt;span style="color:#75715e"># Repetido&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.username&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;%env(KAFKA_USER)%&amp;#34;&lt;/span> &lt;span style="color:#75715e"># Repetido&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># ... las mismas 20 líneas&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Esta repetición no solo es tediosa, sino que también es una fuente de errores sutiles, como olvidar actualizar un parámetro en un &lt;em>transport&lt;/em> cuando cambias otro.&lt;/p>
+&lt;h2 id="una-solución-mejor">&lt;a href="#una-soluci%c3%b3n-mejor" class="header-anchor">&lt;/a>Una solución mejor
+&lt;/h2>&lt;p>Cansado de estas limitaciones, desarrollé un &lt;em>transport&lt;/em> personalizado para Symfony Messenger que se alinea mejor con la naturaleza de Kafka.&lt;/p>
+&lt;h3 id="identificación-clara-de-mensajes">&lt;a href="#identificaci%c3%b3n-clara-de-mensajes" class="header-anchor">&lt;/a>Identificación clara de mensajes
+&lt;/h3>&lt;p>Los mensajes incluyen un identificador explícito que se almacena en los &lt;em>headers&lt;/em> de Kafka:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-php" data-lang="php">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">class&lt;/span> &lt;span style="color:#a6e22e">UserRegistered&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>{
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">public&lt;/span> &lt;span style="color:#66d9ef">function&lt;/span> &lt;span style="color:#a6e22e">__construct&lt;/span>(
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">public&lt;/span> &lt;span style="color:#a6e22e">readonly&lt;/span> &lt;span style="color:#a6e22e">string&lt;/span> $userId,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">public&lt;/span> &lt;span style="color:#a6e22e">readonly&lt;/span> &lt;span style="color:#a6e22e">string&lt;/span> $email
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> ) {}
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">public&lt;/span> &lt;span style="color:#66d9ef">function&lt;/span> &lt;span style="color:#a6e22e">identifier&lt;/span>()&lt;span style="color:#f92672">:&lt;/span> &lt;span style="color:#a6e22e">string&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> {
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">return&lt;/span> &lt;span style="color:#e6db74">&amp;#39;user_registered&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> }
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>}
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Cuando el mensaje llega al consumidor, el &lt;em>transport&lt;/em> lee este identificador y mapea automáticamente el JSON a la clase PHP correspondiente.&lt;/p>
+&lt;h3 id="consumo-selectivo-de-eventos">&lt;a href="#consumo-selectivo-de-eventos" class="header-anchor">&lt;/a>Consumo selectivo de eventos
+&lt;/h3>&lt;p>Puedes especificar qué tipos de eventos procesar desde un &lt;em>topic&lt;/em>. Los eventos no configurados se ignoran automáticamente (&lt;em>auto-commit&lt;/em>):&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">consumer&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">routing&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">user_registered&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">class&lt;/span>: &lt;span style="color:#ae81ff">App\Message\UserRegistered&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">plan_changed&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">class&lt;/span>: &lt;span style="color:#ae81ff">App\Message\PlanChanged&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Otros eventos como user_updated o user_deleted se ignoran&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Esto permite que múltiples servicios consuman el mismo &lt;em>topic&lt;/em>, procesando solo los eventos relevantes sin interferencias.&lt;/p>
+&lt;h3 id="configuración-centralizada">&lt;a href="#configuraci%c3%b3n-centralizada" class="header-anchor">&lt;/a>Configuración centralizada
+&lt;/h3>&lt;p>Las configuraciones comunes de Kafka se definen una sola vez y se heredan en todos los &lt;em>transports&lt;/em>:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># config/packages/event_driven_kafka_transport.yaml&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">event_driven_kafka_transport&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">consumer&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">config&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">security.protocol&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;%env(KAFKA_SECURITY_PROTOCOL)%&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sasl.username&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;%env(KAFKA_USER)%&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># ... configuración común&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># config/packages/messenger.yaml&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">framework&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">messenger&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">transports&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">billing_events&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">options&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">consumer&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">config&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">group.id&lt;/span>: &lt;span style="color:#ae81ff">billing-service &lt;/span> &lt;span style="color:#75715e"># Solo configuraciones específicas&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="soporte-nativo-para-múltiples-topics">&lt;a href="#soporte-nativo-para-m%c3%baltiples-topics" class="header-anchor">&lt;/a>Soporte nativo para múltiples &lt;em>topics&lt;/em>
+&lt;/h3>&lt;p>Puedes enviar un evento a varios &lt;em>topics&lt;/em> sin configuraciones adicionales:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">options&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">topics&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#ae81ff">user_events&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#ae81ff">audit_events&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#ae81ff">analytics_events&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>El evento se publica atómicamente en todos los &lt;em>topics&lt;/em> especificados.&lt;/p>
+&lt;h2 id="detalles-técnicos">&lt;a href="#detalles-t%c3%a9cnicos" class="header-anchor">&lt;/a>Detalles técnicos
+&lt;/h2>&lt;h3 id="sistema-de-hooks">&lt;a href="#sistema-de-hooks" class="header-anchor">&lt;/a>Sistema de &lt;em>hooks&lt;/em>
+&lt;/h3>&lt;p>Para mantener el código desacoplado, el &lt;em>transport&lt;/em> utiliza &lt;em>hooks&lt;/em> que se ejecutan antes y después de producir o consumir mensajes:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-php" data-lang="php">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">class&lt;/span> &lt;span style="color:#a6e22e">EventHook&lt;/span> &lt;span style="color:#66d9ef">implements&lt;/span> &lt;span style="color:#a6e22e">KafkaTransportHookInterface&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>{
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">public&lt;/span> &lt;span style="color:#66d9ef">function&lt;/span> &lt;span style="color:#a6e22e">beforeProduce&lt;/span>(&lt;span style="color:#a6e22e">Envelope&lt;/span> $envelope)&lt;span style="color:#f92672">:&lt;/span> &lt;span style="color:#a6e22e">Envelope&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> {
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> $message &lt;span style="color:#f92672">=&lt;/span> $envelope&lt;span style="color:#f92672">-&amp;gt;&lt;/span>&lt;span style="color:#a6e22e">getMessage&lt;/span>();
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">if&lt;/span> ($message &lt;span style="color:#a6e22e">instanceof&lt;/span> &lt;span style="color:#a6e22e">Message&lt;/span>) {
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">return&lt;/span> $envelope&lt;span style="color:#f92672">-&amp;gt;&lt;/span>&lt;span style="color:#a6e22e">with&lt;/span>(&lt;span style="color:#66d9ef">new&lt;/span> &lt;span style="color:#a6e22e">KafkaIdentifierStamp&lt;/span>($message&lt;span style="color:#f92672">-&amp;gt;&lt;/span>&lt;span style="color:#a6e22e">identifier&lt;/span>()));
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> }
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">return&lt;/span> $envelope;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> }
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>}
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>El &lt;em>transport&lt;/em> detecta automáticamente estos &lt;em>hooks&lt;/em> sin necesidad de configuraciones adicionales.&lt;/p>
+&lt;h3 id="compatibilidad-con-configuraciones-existentes">&lt;a href="#compatibilidad-con-configuraciones-existentes" class="header-anchor">&lt;/a>Compatibilidad con configuraciones existentes
+&lt;/h3>&lt;p>Para facilitar la transición, el &lt;em>transport&lt;/em> usa un DSN diferente, permitiendo que coexista con los &lt;em>transports&lt;/em> actuales:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Transport actual&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>KAFKA_DSN&lt;span style="color:#f92672">=&lt;/span>kafka://localhost:9092
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Nuevo transport&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>KAFKA_EVENTS_DSN&lt;span style="color:#f92672">=&lt;/span>ed+kafka://localhost:9092
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="vale-la-pena-el-esfuerzo">&lt;a href="#vale-la-pena-el-esfuerzo" class="header-anchor">&lt;/a>¿Vale la pena el esfuerzo?
+&lt;/h2>&lt;p>Desarrollar un &lt;em>transport&lt;/em> personalizado requiere tiempo y un conocimiento profundo de Kafka y del código fuente de Symfony Messenger. Además, hay que lidiar con casos extremos que solo aparecen en producción con tráfico real. Entonces, ¿por qué no usar los &lt;em>transports&lt;/em> existentes y aplicar parches?&lt;/p>
+&lt;p>Porque los parches se acumulan. Empiezas filtrando eventos en el &lt;em>handler&lt;/em>, luego duplicas configuraciones, después creas servicios para gestionar el enrutamiento&amp;hellip; y terminas con un sistema frágil y difícil de mantener. Con un &lt;em>transport&lt;/em> bien diseñado, agregar un nuevo tipo de evento se reduce a un par de líneas de configuración, en lugar de una tarde de trabajo y una &lt;em>pull request&lt;/em> que modifica múltiples archivos.&lt;/p>
+&lt;p>Cuando el &lt;em>transport&lt;/em> está bien implementado, se vuelve transparente para el equipo. Los desarrolladores pueden usarlo sin preocuparse por las complejidades internas, lo que acelera el desarrollo y reduce errores.&lt;/p>
+&lt;hr>
+&lt;p>&lt;em>El código completo del &lt;em>transport&lt;/em> está disponible en &lt;a class="link" href="https://github.com/AlvaroRosado/event-driven-kafka-messenger-transport" target="_blank" rel="noopener"
+>GitHub&lt;/a>. Si estás lidiando con los mismos problemas, podría ahorrarte muchos dolores de cabeza.&lt;/em>&lt;/p></description></item><item><title>Apache Kafka para desarrolladores</title><link>https://alvarorosado.es/posts/2025-05-21-apachekafkaparadesarrolladores/</link><pubDate>Wed, 21 May 2025 15:43:00 -0600</pubDate><guid>https://alvarorosado.es/posts/2025-05-21-apachekafkaparadesarrolladores/</guid><description>&lt;p>Si alguna vez te has sentido perdido con Apache Kafka, no estás solo. Tal vez tu jefe lo mencionó como la solución a todos los problemas y solo asentiste, o estás en un proyecto con Kafka y cada error te deja desorientado. Incluso la documentación oficial puede resultar confusa. Si esto te suena, este artículo es para ti. Vamos a explicar Kafka de forma clara, sin tecnicismos innecesarios y con ejemplos prácticos.&lt;/p>
+&lt;h2 id="qué-es-kafka-y-para-qué-sirve">&lt;a href="#qu%c3%a9-es-kafka-y-para-qu%c3%a9-sirve" class="header-anchor">&lt;/a>¿Qué es Kafka y para qué sirve?
+&lt;/h2>&lt;p>Kafka es el sistema que conecta aplicaciones modernas. Imagina una empresa donde cada departamento —ventas, contabilidad, logística, marketing— necesita saber qué pasa en los demás. Cuando hay una venta, contabilidad registra el ingreso, el almacén prepara el envío y marketing envía un correo. En lugar de que todos se comuniquen directamente (un desastre), Kafka actúa como un tablón de anuncios: cada área publica sus eventos y se suscribe a los que le interesan.&lt;/p>
+&lt;p>Esto no solo sirve para empresas, sino para microservicios, dispositivos IoT, análisis en tiempo real o procesamiento de datos masivos. Kafka organiza este flujo de información de manera rápida y confiable.&lt;/p>
+&lt;h2 id="los-elementos-clave-de-kafka">&lt;a href="#los-elementos-clave-de-kafka" class="header-anchor">&lt;/a>Los elementos clave de Kafka
+&lt;/h2>&lt;p>Para entender Kafka, necesitas conocer sus componentes principales:&lt;/p>
+&lt;ul>
+&lt;li>&lt;strong>Topics y particiones&lt;/strong>: Donde se almacenan los mensajes.&lt;/li>
+&lt;li>&lt;strong>Productores&lt;/strong>: Quienes envían los mensajes.&lt;/li>
+&lt;li>&lt;strong>Consumidores&lt;/strong>: Quienes leen los mensajes.&lt;/li>
+&lt;li>&lt;strong>Brokers&lt;/strong>: Los servidores que gestionan el sistema.&lt;/li>
+&lt;/ul>
+&lt;p>Lo explicaremos con una metáfora sencilla: un almacén de documentos muy eficiente.&lt;/p>
+&lt;h2 id="el-almacén-de-kafka">&lt;a href="#el-almac%c3%a9n-de-kafka" class="header-anchor">&lt;/a>El almacén de Kafka
+&lt;/h2>&lt;p>Imagina que gestionas un almacén de documentos bien organizado. Este almacén es Kafka.&lt;/p>
+&lt;h3 id="estanterías-y-cajones">&lt;a href="#estanter%c3%adas-y-cajones" class="header-anchor">&lt;/a>Estanterías y cajones
+&lt;/h3>&lt;p>Tienes estanterías especializadas para diferentes tipos de documentos: una para &amp;ldquo;Facturas&amp;rdquo;, otra para &amp;ldquo;Pedidos&amp;rdquo;, otra para &amp;ldquo;Alertas de inventario&amp;rdquo;. Cada estantería es un &lt;strong>topic&lt;/strong>. Cada una se divide en cajones numerados, que son las &lt;strong>particiones&lt;/strong>. Por ejemplo, si esperas muchas facturas, creas una estantería con cinco cajones; si las alertas son pocas, dos cajones bastan.&lt;/p>
+&lt;p>Los cajones permiten que varios empleados trabajen en paralelo, cada uno en un cajón, sin interferencias. Más cajones significan más velocidad.&lt;/p>
+&lt;h3 id="el-encargado">&lt;a href="#el-encargado" class="header-anchor">&lt;/a>El encargado
+&lt;/h3>&lt;p>En la entrada hay un encargado (el &lt;strong>broker&lt;/strong>) que lo controla todo:&lt;/p>
+&lt;ul>
+&lt;li>Recibe cualquier documento y sabe en qué estantería y cajón guardarlo.&lt;/li>
+&lt;li>Nunca pierde nada.&lt;/li>
+&lt;li>Ordena los documentos por orden de llegada.&lt;/li>
+&lt;li>Recuerda qué documentos ha entregado a cada equipo.&lt;/li>
+&lt;/ul>
+&lt;p>En un sistema real, un clúster de Kafka tiene varios &lt;em>brokers&lt;/em> que distribuyen la carga.&lt;/p>
+&lt;h3 id="los-repartidores">&lt;a href="#los-repartidores" class="header-anchor">&lt;/a>Los repartidores
+&lt;/h3>&lt;p>Cuando la empresa genera un documento (una venta, un pedido, una alerta), un repartidor (el &lt;strong>productor&lt;/strong>) lo lleva al almacén. El encargado lo archiva en el cajón correcto, manteniendo el orden cronológico.&lt;/p>
+&lt;h2 id="procesamiento-de-documentos">&lt;a href="#procesamiento-de-documentos" class="header-anchor">&lt;/a>Procesamiento de documentos
+&lt;/h2>&lt;h3 id="el-equipo-de-contabilidad">&lt;a href="#el-equipo-de-contabilidad" class="header-anchor">&lt;/a>El equipo de contabilidad
+&lt;/h3>&lt;p>Cada semana, llega un equipo de contabilidad con tres personas que piden las facturas nuevas. El encargado asigna tareas:&lt;/p>
+&lt;ul>
+&lt;li>&amp;ldquo;María, revisa el cajón 1 de facturas.&amp;rdquo;&lt;/li>
+&lt;li>&amp;ldquo;Carlos, el cajón 2.&amp;rdquo;&lt;/li>
+&lt;li>&amp;ldquo;Ana, el cajón 3.&amp;rdquo;&lt;/li>
+&lt;/ul>
+&lt;p>Cada uno trabaja en su cajón sin interferir. En Kafka, este equipo es un &lt;strong>Consumer Group&lt;/strong>, y cada persona es un &lt;strong>Consumidor&lt;/strong>. Los consumidores dividen el trabajo para procesar las particiones en paralelo.&lt;/p>
+&lt;h3 id="la-memoria-del-encargado">&lt;a href="#la-memoria-del-encargado" class="header-anchor">&lt;/a>La memoria del encargado
+&lt;/h3>&lt;p>El encargado sabe exactamente cuál fue el último documento entregado a cada equipo. Cuando regresan, retoman donde lo dejaron. En Kafka, esto es el &lt;strong>offset&lt;/strong>: la posición exacta en la partición donde un consumidor dejó de leer.&lt;/p>
+&lt;h2 id="qué-pasa-si-algo-falla">&lt;a href="#qu%c3%a9-pasa-si-algo-falla" class="header-anchor">&lt;/a>¿Qué pasa si algo falla?
+&lt;/h2>&lt;h3 id="si-alguien-falta">&lt;a href="#si-alguien-falta" class="header-anchor">&lt;/a>Si alguien falta
+&lt;/h3>&lt;p>Si un día Carlos no viene, el encargado redistribuye el trabajo:&lt;/p>
+&lt;ul>
+&lt;li>&amp;ldquo;María, además del cajón 1, hoy te encargas del cajón 2.&amp;rdquo;&lt;/li>
+&lt;li>&amp;ldquo;Ana, sigue con el cajón 3.&amp;rdquo;&lt;/li>
+&lt;/ul>
+&lt;p>Nada se queda sin procesar. En Kafka, esto es el &lt;strong>rebalanceo automático&lt;/strong>: si un consumidor falla, los demás se reparten sus particiones.&lt;/p>
+&lt;h3 id="si-se-pierde-un-documento">&lt;a href="#si-se-pierde-un-documento" class="header-anchor">&lt;/a>Si se pierde un documento
+&lt;/h3>&lt;p>Si un cajón se daña, el encargado usa copias de seguridad almacenadas en otros almacenes (otros &lt;em>brokers&lt;/em>). En Kafka, estas &lt;strong>réplicas&lt;/strong> aseguran que los datos estén duplicados para evitar pérdidas.&lt;/p>
+&lt;h2 id="cómo-se-mantiene-el-orden">&lt;a href="#c%c3%b3mo-se-mantiene-el-orden" class="header-anchor">&lt;/a>Cómo se mantiene el orden
+&lt;/h2>&lt;h3 id="organización-de-documentos">&lt;a href="#organizaci%c3%b3n-de-documentos" class="header-anchor">&lt;/a>Organización de documentos
+&lt;/h3>&lt;p>Cada documento lleva una etiqueta (la &lt;strong>key&lt;/strong> en Kafka), como el ID de un cliente. El encargado usa una fórmula para decidir en qué cajón va. La misma etiqueta siempre va al mismo cajón, garantizando que los documentos relacionados (por ejemplo, todas las facturas del cliente &amp;ldquo;12345&amp;rdquo;) estén juntos y en orden cronológico.&lt;/p>
+&lt;h3 id="la-regla-del-orden">&lt;a href="#la-regla-del-orden" class="header-anchor">&lt;/a>La regla del orden
+&lt;/h3>&lt;p>Kafka solo garantiza orden dentro de una partición. Si necesitas orden global, usa una sola partición, pero esto limita el paralelismo, ya que solo un consumidor podrá procesarla. Es un equilibrio entre orden y velocidad:&lt;/p>
+&lt;ul>
+&lt;li>&lt;strong>Más particiones&lt;/strong>: Mayor paralelismo, más velocidad.&lt;/li>
+&lt;li>&lt;strong>Menos particiones&lt;/strong>: Mayor orden, menos velocidad.&lt;/li>
+&lt;/ul>
+&lt;p>El número de particiones determina el máximo de consumidores que pueden trabajar en paralelo.&lt;/p>
+&lt;h2 id="limpieza-del-almacén">&lt;a href="#limpieza-del-almac%c3%a9n" class="header-anchor">&lt;/a>Limpieza del almacén
+&lt;/h2>&lt;p>El almacén no puede crecer infinitamente. El encargado usa dos métodos para mantenerlo manejable:&lt;/p>
+&lt;ul>
+&lt;li>&lt;strong>Por tiempo&lt;/strong>: Los documentos antiguos (por ejemplo, de más de 7 días) se eliminan. En Kafka, esto se configura con &lt;code>retention.ms&lt;/code>. Es ideal para logs o eventos temporales.&lt;/li>
+&lt;li>&lt;strong>Por clave&lt;/strong>: Se guarda solo el documento más reciente para cada etiqueta. Por ejemplo, el último estado de un pedido. Esto se activa con &lt;code>cleanup.policy=compact&lt;/code> y es perfecto para datos como precios o ubicaciones.&lt;/li>
+&lt;/ul>
+&lt;h2 id="consejos-prácticos">&lt;a href="#consejos-pr%c3%a1cticos" class="header-anchor">&lt;/a>Consejos prácticos
+&lt;/h2>&lt;ol>
+&lt;li>&lt;strong>Elige bien las claves&lt;/strong>:&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>Usar la misma clave envía todo a una partición, limitando el paralelismo.&lt;/li>
+&lt;li>Sin claves, Kafka distribuye mensajes aleatoriamente.&lt;/li>
+&lt;li>Usa claves que agrupen datos según tus necesidades.&lt;/li>
+&lt;/ul>
+&lt;ol start="2">
+&lt;li>&lt;strong>Planifica las particiones&lt;/strong>:&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>Aumentar particiones es fácil; reducirlas es complicado.&lt;/li>
+&lt;li>Calcula cuántos consumidores necesitarás en el peor caso.&lt;/li>
+&lt;/ul>
+&lt;ol start="3">
+&lt;li>&lt;strong>Usa &lt;em>topics&lt;/em> con criterio&lt;/strong>:&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>Crea un &lt;em>topic&lt;/em> por concepto claro (por ejemplo, &amp;ldquo;pedidos&amp;rdquo; o &amp;ldquo;transacciones&amp;rdquo;).&lt;/li>
+&lt;li>Usa nombres descriptivos y consistentes.&lt;/li>
+&lt;li>No mezcles conceptos en un mismo &lt;em>topic&lt;/em>.&lt;/li>
+&lt;/ul>
+&lt;ol start="4">
+&lt;li>&lt;strong>Gestiona versiones de mensajes&lt;/strong>:&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>Los formatos de mensajes cambian con el tiempo.&lt;/li>
+&lt;li>Usa herramientas como Schema Registry con Avro o Protobuf para versionado.&lt;/li>
+&lt;li>Asegúrate de que los cambios sean compatibles hacia atrás y hacia adelante.&lt;/li>
+&lt;/ul>
+&lt;h2 id="casos-de-uso">&lt;a href="#casos-de-uso" class="header-anchor">&lt;/a>Casos de uso
+&lt;/h2>&lt;ul>
+&lt;li>&lt;strong>E-commerce&lt;/strong>: Un &lt;em>topic&lt;/em> &amp;ldquo;pedidos&amp;rdquo; registra compras. Los consumidores actualizan inventario, generan facturas, preparan envíos o envían recomendaciones.&lt;/li>
+&lt;li>&lt;strong>Banca&lt;/strong>: Un &lt;em>topic&lt;/em> &amp;ldquo;transacciones&amp;rdquo; captura movimientos. Los consumidores detectan fraudes, registran en contabilidad o envían notificaciones.&lt;/li>
+&lt;li>&lt;strong>IoT&lt;/strong>: Un &lt;em>topic&lt;/em> &amp;ldquo;sensores&amp;rdquo; recoge datos como temperatura. Los consumidores generan alertas, analizan históricos o alimentan modelos de machine learning.&lt;/li>
+&lt;/ul>
+&lt;h2 id="resumen-kafka-vs-almacén">&lt;a href="#resumen-kafka-vs-almac%c3%a9n" class="header-anchor">&lt;/a>Resumen: Kafka vs. Almacén
+&lt;/h2>&lt;table>
+&lt;thead>
+&lt;tr>
+&lt;th>Concepto Kafka&lt;/th>
+&lt;th>Metáfora del almacén&lt;/th>
+&lt;th>Para qué sirve&lt;/th>
+&lt;/tr>
+&lt;/thead>
+&lt;tbody>
+&lt;tr>
+&lt;td>&lt;strong>Cluster&lt;/strong>&lt;/td>
+&lt;td>Almacén completo&lt;/td>
+&lt;td>Sistema Kafka en conjunto&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Broker&lt;/strong>&lt;/td>
+&lt;td>Encargado&lt;/td>
+&lt;td>Servidor que gestiona mensajes&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Topic&lt;/strong>&lt;/td>
+&lt;td>Estantería&lt;/td>
+&lt;td>Categoría de mensajes&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Partition&lt;/strong>&lt;/td>
+&lt;td>Cajón&lt;/td>
+&lt;td>División para paralelismo&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Producer&lt;/strong>&lt;/td>
+&lt;td>Repartidor&lt;/td>
+&lt;td>Aplicación que envía mensajes&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Consumer&lt;/strong>&lt;/td>
+&lt;td>Contable&lt;/td>
+&lt;td>Aplicación que lee mensajes&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Consumer Group&lt;/strong>&lt;/td>
+&lt;td>Equipo de contables&lt;/td>
+&lt;td>Grupo de consumidores colaborando&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Offset&lt;/strong>&lt;/td>
+&lt;td>Último documento revisado&lt;/td>
+&lt;td>Posición de lectura&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Key&lt;/strong>&lt;/td>
+&lt;td>Etiqueta del documento&lt;/td>
+&lt;td>Criterio de particionamiento&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Replication&lt;/strong>&lt;/td>
+&lt;td>Copias en otros almacenes&lt;/td>
+&lt;td>Redundancia para disponibilidad&lt;/td>
+&lt;/tr>
+&lt;/tbody>
+&lt;/table></description></item></channel></rss>

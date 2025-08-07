@@ -1,0 +1,605 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Database on Álvaro Rosado</title><link>https://alvarorosado.es/categories/database/</link><description>Recent content in Database on Álvaro Rosado</description><generator>Hugo -- gohugo.io</generator><language>es-Es</language><lastBuildDate>Thu, 07 Aug 2025 17:00:00 +0000</lastBuildDate><atom:link href="https://alvarorosado.es/categories/database/index.xml" rel="self" type="application/rss+xml"/><item><title>DeadLocks</title><link>https://alvarorosado.es/posts/2025-08-07-deadlocksmysql/</link><pubDate>Thu, 07 Aug 2025 17:00:00 +0000</pubDate><guid>https://alvarorosado.es/posts/2025-08-07-deadlocksmysql/</guid><description>&lt;h2 id="qué-es-un-deadlock">&lt;a href="#qu%c3%a9-es-un-deadlock" class="header-anchor">&lt;/a>¿Qué es un Deadlock?
+&lt;/h2>&lt;p>Un deadlock (bloqueo mutuo) es una situación en la que dos o más transacciones se bloquean mutuamente al intentar acceder a recursos que están siendo utilizados por las otras transacciones. Esto genera un ciclo de espera en el que ninguna puede continuar, ya que cada una espera que la otra libere los recursos que necesita.&lt;/p>
+&lt;p>Cuando MySQL detecta esta condición, automáticamente elige una de las transacciones como &amp;ldquo;víctima&amp;rdquo;, la aborta y libera los locks que mantenía, permitiendo que las demás puedan continuar. La transacción abortada recibe el error &lt;code>ERROR 1213 (40001): Deadlock found when trying to get lock&lt;/code>.&lt;/p>
+&lt;p>Los deadlocks son una posibilidad real en sistemas de bases de datos con alta concurrencia, especialmente cuando múltiples transacciones acceden a los mismos recursos. Aunque no son inevitables, sí pueden ser difíciles de evitar por completo en escenarios complejos. Sin embargo, su impacto puede minimizarse significativamente mediante buenas prácticas de diseño, acceso ordenado a los datos y un monitoreo adecuado.&lt;/p>
+&lt;h3 id="ejemplo-con-actualizaciones-cruzadas">&lt;a href="#ejemplo-con-actualizaciones-cruzadas" class="header-anchor">&lt;/a>Ejemplo con Actualizaciones Cruzadas
+&lt;/h3>&lt;p>Consideremos una tabla de ejemplo para ilustrar un escenario típico de deadlock:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">CREATE&lt;/span> &lt;span style="color:#66d9ef">TABLE&lt;/span> actor (
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> actor_id INT &lt;span style="color:#66d9ef">PRIMARY&lt;/span> &lt;span style="color:#66d9ef">KEY&lt;/span>,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> first_name VARCHAR(&lt;span style="color:#ae81ff">50&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> last_name VARCHAR(&lt;span style="color:#ae81ff">50&lt;/span>)
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> actor &lt;span style="color:#66d9ef">VALUES&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>(&lt;span style="color:#ae81ff">1&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;PENELOPE&amp;#39;&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;GUINESS&amp;#39;&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>(&lt;span style="color:#ae81ff">7&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;GRACE&amp;#39;&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;MOSTEL&amp;#39;&lt;/span>);
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Sesión 1:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">START&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> actor &lt;span style="color:#66d9ef">SET&lt;/span> first_name &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;GUINESS&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> actor_id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">1&lt;/span>; &lt;span style="color:#75715e">-- Adquiere un lock exclusivo en la fila actor_id = 1`
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Sesión 2:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">START&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> actor &lt;span style="color:#66d9ef">SET&lt;/span> first_name &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;MOSTEL&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> actor_id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">7&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Adquiere un lock exclusivo en la fila actor_id = 7
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> actor &lt;span style="color:#66d9ef">SET&lt;/span> last_name &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;PENELOPE&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> actor_id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">1&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Queda bloqueada esperando que Sesión 1 libere actor_id = 1
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Sesión 1 (Ejecutamos otra query en la misma sesión):&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> actor &lt;span style="color:#66d9ef">SET&lt;/span> last_name &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;GRACE&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> actor_id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">7&lt;/span>;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>SQL Error [1213] [40001]: (conn=6) Deadlock found when trying to get lock; try restarting transaction&lt;/strong>&lt;/p>
+&lt;p>&lt;strong>DeadLock! =&amp;gt; Ambas sesiones están esperando recursos que la otra ya posee.&lt;/strong>&lt;/p>
+&lt;p>En este diagrama, se muestra el flujo:&lt;/p>
+&lt;!-- raw HTML omitted -->
+&lt;!-- raw HTML omitted -->
+&lt;!-- raw HTML omitted -->
+&lt;h2 id="diferencia-entre-deadlock-y-lock-timeout">&lt;a href="#diferencia-entre-deadlock-y-lock-timeout" class="header-anchor">&lt;/a>Diferencia entre Deadlock y Lock Timeout
+&lt;/h2>&lt;ul>
+&lt;li>
+&lt;p>&lt;strong>Deadlock&lt;/strong>: Situación en la que dos o más transacciones se bloquean mutuamente, formando un ciclo de espera donde ninguna puede avanzar. MySQL detecta el ciclo y aborta una transacción, generando el error &lt;code>1213: Deadlock found&lt;/code>.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>&lt;strong>Lock Timeout&lt;/strong>: Ocurre cuando una transacción espera demasiado por un recurso bloqueado por otra, sin formar un ciclo. Si la espera supera el límite configurado (&lt;code>innodb_lock_wait_timeout&lt;/code>), MySQL termina la transacción con el error &lt;code>1205: Lock wait timeout exceeded&lt;/code>.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>&lt;strong>Diferencia clave&lt;/strong>: Un deadlock implica un ciclo de dependencias cruzadas entre transacciones; un lock timeout es simplemente una espera prolongada por un recurso sin resolución.&lt;/p>
+&lt;/li>
+&lt;/ul>
+&lt;h2 id="consejos-para-investigar-y-evitar-deadlocks">&lt;a href="#consejos-para-investigar-y-evitar-deadlocks" class="header-anchor">&lt;/a>Consejos para investigar y evitar deadlocks
+&lt;/h2>&lt;p>A continuación, se detallan prácticas recomendadas para identificar y mitigar deadlocks en bases de datos.&lt;/p>
+&lt;ol>
+&lt;li>
+&lt;p>&lt;strong>Reducir la duración de las transacciones&lt;/strong> Las transacciones de larga duración mantienen locks activos durante más tiempo, aumentando la probabilidad de deadlocks. Dividir transacciones complejas en unidades más pequeñas reduce el tiempo de retención de locks y minimiza conflictos.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>&lt;strong>Mantener un orden consistente en las operaciones&lt;/strong> Los deadlocks ocurren frecuentemente cuando transacciones acceden a recursos en órdenes diferentes, creando ciclos de dependencias. Establecer un orden fijo para el acceso a tablas o filas previene estos ciclos al formar colas secuenciales.&lt;/p>
+&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>&lt;strong>Ejemplo&lt;/strong>: Modificando el escenario de la tabla actor para acceder primero a actor_id = 1 y luego a actor_id = 7 en ambas sesiones:&lt;/li>
+&lt;/ul>
+&lt;ol start="3">
+&lt;li>
+&lt;p>&lt;strong>Implementar lógica de reintento en la aplicación&lt;/strong> Aunque los deadlocks no siempre se pueden evitar, agregar mecanismos de reintento permite que la aplicación reejecute la transacción abortada automáticamente.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>&lt;strong>Revisar y ajustar niveles de aislamiento transaccional&lt;/strong> Niveles de aislamiento altos generan más locks explícitos.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>&lt;strong>Optimizar con índices adecuados&lt;/strong> Consultas sin índices apropiados escanean más registros, estableciendo locks innecesarios. Agregar índices bien diseñados reduce el número de locks y acelera las operaciones.&lt;/p>
+&lt;/li>
+&lt;/ol>
+&lt;ul>
+&lt;li>
+&lt;p>&lt;strong>Ejemplo&lt;/strong>: Para una tabla sin índice en producto_id:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">`&lt;/span> &lt;span style="color:#75715e">-- Consulta lenta sin índice
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> inventario &lt;span style="color:#66d9ef">SET&lt;/span> stock &lt;span style="color:#f92672">=&lt;/span> stock &lt;span style="color:#f92672">-&lt;/span> &lt;span style="color:#ae81ff">1&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> producto_id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>; &lt;span style="color:#f92672">`&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Si añadimos un índice:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">`&lt;/span> &lt;span style="color:#66d9ef">CREATE&lt;/span> &lt;span style="color:#66d9ef">INDEX&lt;/span> idx_producto_id &lt;span style="color:#66d9ef">ON&lt;/span> inventario (producto_id); &lt;span style="color:#f92672">`&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Esto limita los locks a filas específicas en lugar de rangos amplios.&lt;/p>
+&lt;/li>
+&lt;/ul>
+&lt;ol start="6">
+&lt;li>&lt;strong>Minimizar el impacto de locks en operaciones de esquema&lt;/strong> Evitar operaciones que adquieran locks agresivos durante periodos prolongados.&lt;/li>
+&lt;/ol>
+&lt;p>Estas prácticas, combinadas con monitoreo continuo (por ejemplo, revisando logs de deadlocks en MySQL con SHOW ENGINE INNODB STATUS), ayudan a mitigar deadlocks efectivamente.&lt;/p></description></item><item><title>Transacciones</title><link>https://alvarorosado.es/posts/2025-05-27-transacciones/</link><pubDate>Tue, 27 May 2025 17:00:00 -0600</pubDate><guid>https://alvarorosado.es/posts/2025-05-27-transacciones/</guid><description>&lt;p>En esta entrada vamos a profundizar un poco en como funcionan las transacciones a nivel de base de datos, problemas comunes y le echaremos un ojo a las funcionalidades no tan conocidas que podemos usar con doctrine.&lt;/p>
+&lt;h2 id="estás-hart-de-usarlas-pero-en-sí-qué-es-una-transacción">&lt;a href="#est%c3%a1s-hart-de-usarlas-pero-en-s%c3%ad-qu%c3%a9-es-una-transacci%c3%b3n" class="header-anchor">&lt;/a>Estás hart@ de usarlas pero &amp;hellip;¿En sí qué es una transacción?
+&lt;/h2>&lt;p>Es una secuencia de una o más operaciones ejecutadas como una unidad lógica, esto significa que una transacción asegura que todas las operaciones que en ella hacemos, se han ejecutado exitosamente, si alguna falla las operaciones implicadas se revienten haciendo un rollback.&lt;/p>
+&lt;h2 id="las-propiedades-acid-los-pilares-de-las-transacciones">&lt;a href="#las-propiedades-acid-los-pilares-de-las-transacciones" class="header-anchor">&lt;/a>&lt;strong>Las propiedades ACID: Los pilares de las transacciones&lt;/strong>
+&lt;/h2>&lt;p>Para entender completamente las transacciones, es fundamental conocer las propiedades ACID, que garantizan la confiabilidad de las operaciones en base de datos:&lt;/p>
+&lt;p>&lt;img src="https://substackcdn.com/image/fetch/w_1456,c_limit,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fbac45aff-4ebb-4654-94db-27a793f61309_1253x883.gif"
+loading="lazy"
+alt="img"
+>&lt;/p>
+&lt;h3 id="atomicidad-atomicity">&lt;a href="#atomicidad-atomicity" class="header-anchor">&lt;/a>&lt;strong>Atomicidad (Atomicity)&lt;/strong>
+&lt;/h3>&lt;p>Una transacción es una unidad indivisible de trabajo. Todas las operaciones dentro de una transacción se ejecutan completamente o no se ejecutan en absoluto. Si cualquier operación falla, toda la transacción se revierte.&lt;/p>
+&lt;h3 id="consistencia-consistency">&lt;a href="#consistencia-consistency" class="header-anchor">&lt;/a>&lt;strong>Consistencia (Consistency)&lt;/strong>
+&lt;/h3>&lt;p>La base de datos debe mantenerse en un estado consistente antes y después de cada transacción. Todas las reglas de integridad, restricciones y triggers deben respetarse.&lt;/p>
+&lt;h3 id="aislamiento-isolation">&lt;a href="#aislamiento-isolation" class="header-anchor">&lt;/a>&lt;strong>Aislamiento (Isolation)&lt;/strong>
+&lt;/h3>&lt;p>Las transacciones concurrentes no deben interferir entre sí. Cada transacción debe ejecutarse como si fuera la única operación en la base de datos.&lt;/p>
+&lt;h3 id="durabilidad-durability">&lt;a href="#durabilidad-durability" class="header-anchor">&lt;/a>&lt;strong>Durabilidad (Durability)&lt;/strong>
+&lt;/h3>&lt;p>Una vez que una transacción se confirma, sus cambios son permanentes, incluso en caso de fallos del sistema.&lt;/p>
+&lt;h2 id="aislamiento-transaccional">&lt;a href="#aislamiento-transaccional" class="header-anchor">&lt;/a>Aislamiento transaccional:
+&lt;/h2>&lt;p>Cuando varias transacciones se ejecutan simultáneamente en una base de datos, pueden producirse varios problemas de concurrencia, como lecturas sucias, lecturas no repetibles y lecturas fantasma. Para gestionar estos problemas, las bases de datos SQL tienen diferentes niveles de aislamiento de transacciones, que controlan qué cambios en los datos son visibles para las transacciones que se ejecutan simultáneamente.&lt;/p>
+&lt;h1 id="niveles-de-aislamiento-de-transacciones">&lt;a href="#niveles-de-aislamiento-de-transacciones" class="header-anchor">&lt;/a>Niveles de Aislamiento de Transacciones
+&lt;/h1>&lt;h2 id="comparación-general">&lt;a href="#comparaci%c3%b3n-general" class="header-anchor">&lt;/a>Comparación General
+&lt;/h2>&lt;table>
+&lt;thead>
+&lt;tr>
+&lt;th>Nivel de Aislamiento&lt;/th>
+&lt;th>Lectura Sucia&lt;/th>
+&lt;th>Non-Repeatable Read&lt;/th>
+&lt;th>Phantom Read&lt;/th>
+&lt;th>Caso de Uso&lt;/th>
+&lt;th>Ejemplo Práctico&lt;/th>
+&lt;/tr>
+&lt;/thead>
+&lt;tbody>
+&lt;tr>
+&lt;td>&lt;strong>READ UNCOMMITTED&lt;/strong>&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>Reportes aproximados donde la precisión exacta no es crítica&lt;/td>
+&lt;td>Dashboard en tiempo real mostrando estadísticas generales de ventas&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>READ COMMITTED&lt;/strong>&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>Aplicaciones web típicas, operaciones CRUD básicas&lt;/td>
+&lt;td>Sistema de e-commerce mostrando inventario actual&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>REPEATABLE READ&lt;/strong>&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>✅ Permite&lt;/td>
+&lt;td>Reportes financieros que requieren consistencia durante la ejecución&lt;/td>
+&lt;td>Generación de estados de cuenta bancarios&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>SERIALIZABLE&lt;/strong>&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>❌ Previene&lt;/td>
+&lt;td>Transacciones críticas que requieren aislamiento total&lt;/td>
+&lt;td>Transferencias bancarias entre cuentas&lt;/td>
+&lt;/tr>
+&lt;/tbody>
+&lt;/table>
+&lt;h2 id="explicación-de-anomalías">&lt;a href="#explicaci%c3%b3n-de-anomal%c3%adas" class="header-anchor">&lt;/a>Explicación de Anomalías
+&lt;/h2>&lt;h3 id="-lectura-sucia-dirty-read">&lt;a href="#-lectura-sucia-dirty-read" class="header-anchor">&lt;/a>🔴 &lt;strong>Lectura Sucia (Dirty Read)&lt;/strong>
+&lt;/h3>&lt;p>Leer datos que han sido modificados por otra transacción pero aún no confirmados.&lt;/p>
+&lt;p>&lt;strong>Ejemplo:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> accounts (acctnum, balance) &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">12345&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Aún no committed
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B (con READ UNCOMMITTED)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>; &lt;span style="color:#75715e">-- Ve el registro
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">ROLLBACK&lt;/span>; &lt;span style="color:#75715e">-- La cuenta nunca existió realmente
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>⚠️ &lt;strong>Nota PostgreSQL&lt;/strong>: PostgreSQL no soporta realmente READ UNCOMMITTED - lo trata como READ COMMITTED.&lt;/p>
+&lt;h3 id="-non-repeatable-read">&lt;a href="#-non-repeatable-read" class="header-anchor">&lt;/a>🟡 &lt;strong>Non-Repeatable Read&lt;/strong>
+&lt;/h3>&lt;p>Una consulta repetida dentro de la misma transacción devuelve resultados diferentes.&lt;/p>
+&lt;p>&lt;strong>Ejemplo:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> balance &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>; &lt;span style="color:#75715e">-- Lee $100
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">500&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">COMMIT&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A (misma transacción)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> balance &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>; &lt;span style="color:#75715e">-- Lee $500
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Problema &amp;ldquo;Write After Read&amp;rdquo;:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">IF&lt;/span> (&lt;span style="color:#66d9ef">SELECT&lt;/span> balance &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>) &lt;span style="color:#f92672">&amp;gt;&lt;/span> &lt;span style="color:#ae81ff">1000&lt;/span> &lt;span style="color:#66d9ef">THEN&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e">-- Otro proceso puede cambiar el balance aquí
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> balance &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#ae81ff">1&lt;/span>.&lt;span style="color:#ae81ff">1&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> acctnum &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">12345&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">END&lt;/span> &lt;span style="color:#66d9ef">IF&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">COMMIT&lt;/span>;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="-phantom-read">&lt;a href="#-phantom-read" class="header-anchor">&lt;/a>🟠 &lt;strong>Phantom Read&lt;/strong>
+&lt;/h3>&lt;p>Nuevas filas aparecen o desaparecen entre consultas de la misma transacción.&lt;/p>
+&lt;p>&lt;strong>Ejemplo:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#66d9ef">COUNT&lt;/span>(&lt;span style="color:#f92672">*&lt;/span>) &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> balance &lt;span style="color:#f92672">&amp;gt;&lt;/span> &lt;span style="color:#ae81ff">0&lt;/span>; &lt;span style="color:#75715e">-- Cuenta 5
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> accounts &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">12345&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">COMMIT&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A (misma transacción)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#66d9ef">COUNT&lt;/span>(&lt;span style="color:#f92672">*&lt;/span>) &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> balance &lt;span style="color:#f92672">&amp;gt;&lt;/span> &lt;span style="color:#ae81ff">0&lt;/span>; &lt;span style="color:#75715e">-- Cuenta 6
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="tipos-de-locks-en-mysql-y-postgresql">&lt;a href="#tipos-de-locks-en-mysql-y-postgresql" class="header-anchor">&lt;/a>&lt;strong>Tipos de Locks en MySQL y PostgreSQL&lt;/strong>
+&lt;/h2>&lt;p>Los locks (bloqueos) son fundamentales para manejar la concurrencia en bases de datos. Diferentes tipos de locks permiten controlar el acceso a recursos compartidos y prevenir condiciones de carrera.&lt;/p>
+&lt;h3 id="shared-lock-bloqueo-compartido">&lt;a href="#shared-lock-bloqueo-compartido" class="header-anchor">&lt;/a>Shared Lock (Bloqueo Compartido)
+&lt;/h3>&lt;p>Permite que múltiples transacciones lean el mismo recurso simultáneamente, pero previene escrituras.&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">SHARE&lt;/span>;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Características:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>✅ Múltiples lecturas concurrentes permitidas&lt;/li>
+&lt;li>❌ Bloquea escrituras mientras esté activo&lt;/li>
+&lt;li>🎯 Ideal para: Reportes que requieren datos consistentes&lt;/li>
+&lt;/ul>
+&lt;h3 id="exclusive-lock-bloqueo-exclusivo">&lt;a href="#exclusive-lock-bloqueo-exclusivo" class="header-anchor">&lt;/a>Exclusive Lock (Bloqueo Exclusivo)
+&lt;/h3>&lt;p>Bloquea completamente el recurso, previniendo tanto lecturas como escrituras de otras transacciones.&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">456&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Características:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>❌ Bloquea todas las operaciones (lectura y escritura)&lt;/li>
+&lt;li>🎯 Ideal para: Actualizaciones críticas como inventario, transferencias&lt;/li>
+&lt;/ul>
+&lt;h3 id="metadata-locks">&lt;a href="#metadata-locks" class="header-anchor">&lt;/a>Metadata Locks
+&lt;/h3>&lt;p>Los metadata locks protegen la estructura de las tablas durante operaciones DDL (Data Definition Language).&lt;/p>
+&lt;h3 id="monitoring-de-locks">&lt;a href="#monitoring-de-locks" class="header-anchor">&lt;/a>Monitoring de Locks
+&lt;/h3>&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- PostgreSQL: Ver locks activos
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> locktype,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">database&lt;/span>,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> relation::regclass,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> page,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> tuple,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> transactionid,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">mode&lt;/span>,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">granted&lt;/span>,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> pid,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> query
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">FROM&lt;/span> pg_locks
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">JOIN&lt;/span> pg_stat_activity &lt;span style="color:#66d9ef">ON&lt;/span> pg_locks.pid &lt;span style="color:#f92672">=&lt;/span> pg_stat_activity.pid
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">WHERE&lt;/span> &lt;span style="color:#66d9ef">NOT&lt;/span> &lt;span style="color:#66d9ef">granted&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- MySQL:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> object_type,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> object_schema,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> object_name,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_type,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_duration,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_status,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> thread_id
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">FROM&lt;/span> performance_schema.metadata_locks
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">WHERE&lt;/span> lock_status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;PENDING&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- MariaDB:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> information_schema.innodb_locks;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> information_schema.innodb_lock_waits;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="comportamiento-completo-de-locks-en-mysql-según-nivel-de-aislamiento">&lt;a href="#comportamiento-completo-de-locks-en-mysql-seg%c3%ban-nivel-de-aislamiento" class="header-anchor">&lt;/a>&lt;strong>Comportamiento Completo de Locks en MySQL según Nivel de Aislamiento&lt;/strong>
+&lt;/h2>&lt;p>MySQL InnoDB implementa diferentes estrategias de bloqueo para cada nivel de aislamiento. El nivel por defecto es &lt;strong>REPEATABLE READ&lt;/strong> y los locks se aplican automáticamente en &lt;strong>todas las operaciones DML&lt;/strong> (INSERT, UPDATE, DELETE), no solo en consultas explícitas con FOR UPDATE.&lt;/p>
+&lt;h3 id="repeatable-read-nivel-por-defecto">&lt;a href="#repeatable-read-nivel-por-defecto" class="header-anchor">&lt;/a>&lt;strong>REPEATABLE READ (Nivel por Defecto)&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Características principales:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>Las lecturas consistentes usan snapshots&lt;/li>
+&lt;li>Utiliza gap locks y next-key locks automáticamente&lt;/li>
+&lt;li>Se aplica en SELECT FOR UPDATE/SHARE, UPDATE, DELETE e INSERT&lt;/li>
+&lt;/ul>
+&lt;p>&lt;strong>Comportamiento en SELECT FOR UPDATE/SHARE:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Índice único: solo record lock
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Solo bloquea el registro específico
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Búsqueda por rango: gap + record locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> orders &lt;span style="color:#66d9ef">WHERE&lt;/span> status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;pending&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Bloquea registros existentes + gaps entre ellos
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Comportamiento en UPDATE:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Tabla: products (id, category, price)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Datos: (1,&amp;#39;electronics&amp;#39;,100), (2,&amp;#39;electronics&amp;#39;,300), (3,&amp;#39;electronics&amp;#39;,500)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> products &lt;span style="color:#66d9ef">SET&lt;/span> price &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">250&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Aplica automáticamente:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 1. Next-key locks en todos los registros con category=&amp;#39;electronics&amp;#39;
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 2. Gap locks entre esos registros
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 3. Gap lock después del último registro del rango
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Comportamiento en INSERT:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Los INSERTs adquieren insert intention locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">4&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">350&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Si hay gap locks activos en el rango donde va el nuevo registro:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 1. INSERT espera hasta que se liberen los gap locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 2. Luego aplica record lock en el nuevo registro
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 3. Pueden ocurrir deadlocks con otros INSERTs concurrentes
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Comportamiento en DELETE:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- DELETE usa next-key locks igual que UPDATE
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">DELETE&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> orders &lt;span style="color:#66d9ef">WHERE&lt;/span> status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;cancelled&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Bloquea:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 1. Todos los registros que coinciden (record locks)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 2. Gaps entre esos registros (gap locks)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 3. Previene INSERTs de nuevos registros &amp;#39;cancelled&amp;#39;
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="read-committed">&lt;a href="#read-committed" class="header-anchor">&lt;/a>&lt;strong>READ COMMITTED&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Diferencias clave:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>NO usa gap locks en operaciones normales&lt;/li>
+&lt;li>Solo record locks en registros que realmente modifica&lt;/li>
+&lt;li>Libera locks de registros que no cumplen condiciones WHERE&lt;/li>
+&lt;/ul>
+&lt;p>&lt;strong>Comportamiento mejorado en UPDATE:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Tabla sin índices
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">CREATE&lt;/span> &lt;span style="color:#66d9ef">TABLE&lt;/span> t (a INT &lt;span style="color:#66d9ef">NOT&lt;/span> &lt;span style="color:#66d9ef">NULL&lt;/span>, b INT) ENGINE &lt;span style="color:#f92672">=&lt;/span> InnoDB;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> t &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">1&lt;/span>,&lt;span style="color:#ae81ff">2&lt;/span>),(&lt;span style="color:#ae81ff">2&lt;/span>,&lt;span style="color:#ae81ff">3&lt;/span>),(&lt;span style="color:#ae81ff">3&lt;/span>,&lt;span style="color:#ae81ff">2&lt;/span>),(&lt;span style="color:#ae81ff">4&lt;/span>,&lt;span style="color:#ae81ff">3&lt;/span>),(&lt;span style="color:#ae81ff">5&lt;/span>,&lt;span style="color:#ae81ff">2&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- REPEATABLE READ (por defecto)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> t &lt;span style="color:#66d9ef">SET&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">5&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">3&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Escanea y bloquea TODAS las filas, retiene todos los locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- READ COMMITTED
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SET&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span> &lt;span style="color:#66d9ef">ISOLATION&lt;/span> &lt;span style="color:#66d9ef">LEVEL&lt;/span> &lt;span style="color:#66d9ef">READ&lt;/span> &lt;span style="color:#66d9ef">COMMITTED&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> t &lt;span style="color:#66d9ef">SET&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">5&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">3&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Escanea todas las filas pero:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 1. Libera locks de filas que NO modifica
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 2. Solo retiene locks de filas actualizadas
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 3. Permite mayor concurrencia
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Semi-consistent reads en READ COMMITTED:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A (READ COMMITTED)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> balance &lt;span style="color:#f92672">+&lt;/span> &lt;span style="color:#ae81ff">100&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;active&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B (concurrent)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;inactive&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- En READ COMMITTED:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 1. Sesión A lee la versión committed más reciente para evaluar WHERE
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 2. Si el registro ya no cumple la condición, lo omite sin bloquear
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- 3. Si cumple, adquiere lock y procede con UPDATE
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="read-uncommitted">&lt;a href="#read-uncommitted" class="header-anchor">&lt;/a>&lt;strong>READ UNCOMMITTED&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Comportamiento de locks:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>Los &lt;code>SELECT&lt;/code> statements se ejecutan de manera &lt;strong>no bloqueante&lt;/strong>&lt;/li>
+&lt;li>Pueden leer versiones anteriores (no committed) de las filas&lt;/li>
+&lt;li>Estas lecturas &lt;strong>no son consistentes&lt;/strong> - dirty reads&lt;/li>
+&lt;li>Para el resto de operaciones funciona como &lt;strong>READ COMMITTED&lt;/strong>&lt;/li>
+&lt;/ul>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">5000&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- NO hace commit aún
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B (READ UNCOMMITTED)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SET&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span> &lt;span style="color:#66d9ef">ISOLATION&lt;/span> &lt;span style="color:#66d9ef">LEVEL&lt;/span> &lt;span style="color:#66d9ef">READ&lt;/span> &lt;span style="color:#66d9ef">UNCOMMITTED&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> balance &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Puede leer 5000 (valor no committed)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Si A hace ROLLBACK, nunca existió realmente ese valor
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Para INSERTs, UPDATEs, DELETEs: comportamiento igual que READ COMMITTED
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">1000&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">456&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Solo bloquea registros que modifica, libera locks de no-matches
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="serializable">&lt;a href="#serializable" class="header-anchor">&lt;/a>&lt;strong>SERIALIZABLE&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Comportamiento especial según autocommit:&lt;/strong>&lt;/p>
+&lt;p>&lt;strong>Con autocommit deshabilitado:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SET&lt;/span> autocommit &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">0&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Los SELECT planos se convierten automáticamente en SELECT FOR SHARE
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- InnoDB lo convierte implícitamente a:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">SHARE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Esto significa que adquiere shared locks y puede bloquear otras transacciones
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Con autocommit habilitado (por defecto):&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SET&lt;/span> autocommit &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">1&lt;/span>; &lt;span style="color:#75715e">-- Valor por defecto
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- El SELECT es su propia transacción
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Se ejecuta como lectura consistente no bloqueante
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- NO necesita bloquear otras transacciones
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Puede ser serializado sin problemas de concurrencia
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Forzar bloqueo en SERIALIZABLE:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Para forzar que un SELECT bloque si otras transacciones
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- han modificado las filas seleccionadas:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SET&lt;/span> autocommit &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">0&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ahora SÍ bloquea (convierte a FOR SHARE automáticamente)
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Excepción para Grant Tables:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Las operaciones DML que leen de las tablas de grants de MySQL
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- NO adquieren read locks en las grant tables, independientemente
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- del nivel de aislamiento
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ejemplo: esta consulta NO bloquea las tablas mysql.user, mysql.db, etc.
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> u.name
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">FROM&lt;/span> users u
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">JOIN&lt;/span> mysql.&lt;span style="color:#66d9ef">user&lt;/span> mu &lt;span style="color:#66d9ef">ON&lt;/span> u.username &lt;span style="color:#f92672">=&lt;/span> mu.&lt;span style="color:#66d9ef">User&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">WHERE&lt;/span> u.status &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;active&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Esto es para evitar bloqueos en operaciones de seguridad/permisos
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="configuración-de-niveles-de-aislamiento">&lt;a href="#configuraci%c3%b3n-de-niveles-de-aislamiento" class="header-anchor">&lt;/a>&lt;strong>Configuración de Niveles de Aislamiento&lt;/strong>
+&lt;/h3>&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Para la sesión actual
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SET&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span> &lt;span style="color:#66d9ef">ISOLATION&lt;/span> &lt;span style="color:#66d9ef">LEVEL&lt;/span> &lt;span style="color:#66d9ef">READ&lt;/span> &lt;span style="color:#66d9ef">COMMITTED&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Para todas las conexiones siguientes
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SET&lt;/span> &lt;span style="color:#66d9ef">GLOBAL&lt;/span> &lt;span style="color:#66d9ef">TRANSACTION&lt;/span> &lt;span style="color:#66d9ef">ISOLATION&lt;/span> &lt;span style="color:#66d9ef">LEVEL&lt;/span> &lt;span style="color:#66d9ef">READ&lt;/span> &lt;span style="color:#66d9ef">COMMITTED&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Al iniciar el servidor
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>mysqld &lt;span style="color:#75715e">--transaction-isolation=READ-COMMITTED
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Verificar nivel actual
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">@@&lt;/span>transaction_isolation;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="consideraciones-importantes">&lt;a href="#consideraciones-importantes" class="header-anchor">&lt;/a>&lt;strong>Consideraciones Importantes&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>⚠️ Mixing Locking and Non-locking Statements:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- NO recomendado en REPEATABLE READ
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> balance &lt;span style="color:#66d9ef">FROM&lt;/span> accounts &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>; &lt;span style="color:#75715e">-- Non-locking
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> accounts &lt;span style="color:#66d9ef">SET&lt;/span> balance &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">1000&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">123&lt;/span>; &lt;span style="color:#75715e">-- Locking
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Estados de tabla inconsistentes
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>🎯 Caso de uso con índices:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">CREATE&lt;/span> &lt;span style="color:#66d9ef">TABLE&lt;/span> t (a INT &lt;span style="color:#66d9ef">NOT&lt;/span> &lt;span style="color:#66d9ef">NULL&lt;/span>, b INT, &lt;span style="color:#66d9ef">c&lt;/span> INT, &lt;span style="color:#66d9ef">INDEX&lt;/span> (b)) ENGINE &lt;span style="color:#f92672">=&lt;/span> InnoDB;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> t &lt;span style="color:#66d9ef">SET&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">3&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">2&lt;/span> &lt;span style="color:#66d9ef">AND&lt;/span> &lt;span style="color:#66d9ef">c&lt;/span> &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">3&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Solo considera la columna indexada (b) para locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B se bloquea porque también usa el índice en columna b
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> t &lt;span style="color:#66d9ef">SET&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">4&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> b &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">2&lt;/span> &lt;span style="color:#66d9ef">AND&lt;/span> &lt;span style="color:#66d9ef">c&lt;/span> &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">4&lt;/span>;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="gap-locks-y-next-key-locks-prevención-de-phantom-reads">&lt;a href="#gap-locks-y-next-key-locks-prevenci%c3%b3n-de-phantom-reads" class="header-anchor">&lt;/a>&lt;strong>Gap Locks y Next-Key Locks: Prevención de Phantom Reads&lt;/strong>
+&lt;/h2>&lt;p>Los gap locks y next-key locks son mecanismos específicos de InnoDB para prevenir phantom reads y mantener la consistencia en REPEATABLE READ.&lt;/p>
+&lt;h3 id="qué-son-los-gap-locks">&lt;a href="#qu%c3%a9-son-los-gap-locks" class="header-anchor">&lt;/a>&lt;strong>¿Qué son los Gap Locks?&lt;/strong>
+&lt;/h3>&lt;p>Un &lt;strong>gap lock&lt;/strong> bloquea el espacio entre registros de índice, NO los registros en sí mismos. Su único propósito es &lt;strong>prevenir que otras transacciones inserten nuevos registros&lt;/strong> en ese gap.&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ejemplo con índice en columna &amp;#39;id&amp;#39;
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Registros existentes: id = 10, 20, 30
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">&amp;gt;&lt;/span> &lt;span style="color:#ae81ff">15&lt;/span> &lt;span style="color:#66d9ef">AND&lt;/span> id &lt;span style="color:#f92672">&amp;lt;&lt;/span> &lt;span style="color:#ae81ff">25&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Gap locks aplicados:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Gap antes de id=20: (15, 20)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Previene INSERT de id=16,17,18,19
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- NO bloquea el registro id=20 en sí
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Características importantes:&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>✅ Múltiples transacciones pueden tener gap locks en el mismo gap&lt;/li>
+&lt;li>✅ Gap locks son &lt;strong>compatibles entre sí&lt;/strong>&lt;/li>
+&lt;li>❌ &lt;strong>Solo previenen INSERTs&lt;/strong>, no afectan SELECTs ni UPDATEs de registros existentes&lt;/li>
+&lt;/ul>
+&lt;h3 id="qué-son-los-next-key-locks">&lt;a href="#qu%c3%a9-son-los-next-key-locks" class="header-anchor">&lt;/a>&lt;strong>¿Qué son los Next-Key Locks?&lt;/strong>
+&lt;/h3>&lt;p>Un &lt;strong>next-key lock&lt;/strong> combina:&lt;/p>
+&lt;ul>
+&lt;li>&lt;strong>Record lock&lt;/strong> en el registro actual&lt;/li>
+&lt;li>&lt;strong>Gap lock&lt;/strong> en el gap antes del registro&lt;/li>
+&lt;/ul>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Registros: id = 10, 20, 30, 40
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#f92672">&amp;lt;=&lt;/span> &lt;span style="color:#ae81ff">25&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Next-key locks aplicados:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (-∞, 10] + record lock en id=10
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (10, 20] + record lock en id=20
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (20, 30] - solo gap lock (no incluye id=30)
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="ejemplos-prácticos-detallados">&lt;a href="#ejemplos-pr%c3%a1cticos-detallados" class="header-anchor">&lt;/a>&lt;strong>Ejemplos Prácticos Detallados&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Ejemplo 1: Gap Lock en Acción&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">CREATE&lt;/span> &lt;span style="color:#66d9ef">TABLE&lt;/span> products (
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> id INT &lt;span style="color:#66d9ef">PRIMARY&lt;/span> &lt;span style="color:#66d9ef">KEY&lt;/span>,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> category VARCHAR(&lt;span style="color:#ae81ff">50&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> price DECIMAL(&lt;span style="color:#ae81ff">10&lt;/span>,&lt;span style="color:#ae81ff">2&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">INDEX&lt;/span> idx_price (price)
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>(&lt;span style="color:#ae81ff">1&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>.&lt;span style="color:#ae81ff">00&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>(&lt;span style="color:#ae81ff">2&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">300&lt;/span>.&lt;span style="color:#ae81ff">00&lt;/span>),
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>(&lt;span style="color:#ae81ff">3&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">500&lt;/span>.&lt;span style="color:#ae81ff">00&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> price &lt;span style="color:#f92672">&amp;gt;&lt;/span> &lt;span style="color:#ae81ff">200&lt;/span> &lt;span style="color:#66d9ef">AND&lt;/span> price &lt;span style="color:#f92672">&amp;lt;&lt;/span> &lt;span style="color:#ae81ff">400&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Aplica gap lock en el rango (200, 300) y (300, 400)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B - Esta INSERT se BLOQUEA
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">4&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">250&lt;/span>.&lt;span style="color:#ae81ff">00&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Se bloquea porque 250 está en el gap (200, 300)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión C - Esta INSERT funciona
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">5&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">600&lt;/span>.&lt;span style="color:#ae81ff">00&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- OK porque 600 no está en ningún gap bloqueado
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Ejemplo 2: Next-Key Lock Completo&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Datos: user_id = 5, 10, 15, 20
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">BEGIN&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> user_id &lt;span style="color:#f92672">&amp;lt;=&lt;/span> &lt;span style="color:#ae81ff">12&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Next-key locks aplicados:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (-∞, 5] : gap (-∞, 5) + record lock en 5
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (5, 10] : gap (5, 10) + record lock en 10
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- (10, 15) : solo gap lock hasta 12
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Otros comportamientos:
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- ✅ SELECT user_id=15 permitido (no tiene record lock)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- ❌ INSERT user_id=7 bloqueado (está en gap (5,10))
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- ❌ UPDATE user_id=10 bloqueado (tiene record lock)
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="insert-y-gap-locks">&lt;a href="#insert-y-gap-locks" class="header-anchor">&lt;/a>&lt;strong>INSERT y Gap Locks:&lt;/strong>
+&lt;/h3>&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Datos existentes: id = 10, 20, 30
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión A
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> products &lt;span style="color:#66d9ef">SET&lt;/span> price &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">200&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> id &lt;span style="color:#66d9ef">BETWEEN&lt;/span> &lt;span style="color:#ae81ff">15&lt;/span> &lt;span style="color:#66d9ef">AND&lt;/span> &lt;span style="color:#ae81ff">25&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Aplica gap locks en (10,20) y (20,30)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión B - estos INSERTs se BLOQUEAN
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">12&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;test&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>); &lt;span style="color:#75715e">-- Bloqueado por gap (10,20)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">22&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;test&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>); &lt;span style="color:#75715e">-- Bloqueado por gap (20,30)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Sesión C - este INSERT funciona
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> products &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">35&lt;/span>, &lt;span style="color:#e6db74">&amp;#39;test&amp;#39;&lt;/span>, &lt;span style="color:#ae81ff">100&lt;/span>); &lt;span style="color:#75715e">-- OK, fuera de gaps bloqueados
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="casos-especiales-y-optimizaciones">&lt;a href="#casos-especiales-y-optimizaciones" class="header-anchor">&lt;/a>&lt;strong>Casos Especiales y Optimizaciones&lt;/strong>
+&lt;/h3>&lt;p>&lt;strong>Búsqueda por Clave Única&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Índice único en email
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> users &lt;span style="color:#66d9ef">WHERE&lt;/span> email &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;user@example.com&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Solo record lock, NO gap lock
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- InnoDB sabe que es único, no hay riesgo de phantoms
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;strong>Búsqueda que No Encuentra Registros&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- No hay registros con price = 250
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> products &lt;span style="color:#66d9ef">WHERE&lt;/span> price &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">250&lt;/span> &lt;span style="color:#66d9ef">FOR&lt;/span> &lt;span style="color:#66d9ef">UPDATE&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Aplica gap lock en el gap donde estaría price=250
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Previene INSERT de price=250 hasta commit
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="cuándo-se-desactivan-los-gap-locks">&lt;a href="#cu%c3%a1ndo-se-desactivan-los-gap-locks" class="header-anchor">&lt;/a>&lt;strong>Cuándo se Desactivan los Gap Locks&lt;/strong>
+&lt;/h3>&lt;p>Los gap locks se &lt;strong>desactivan&lt;/strong> automáticamente en:&lt;/p>
+&lt;ol>
+&lt;li>&lt;strong>READ COMMITTED&lt;/strong>: Solo para statement locking normal&lt;/li>
+&lt;li>&lt;strong>Foreign Key Constraints&lt;/strong>: Siempre activos para verificación de integridad&lt;/li>
+&lt;li>&lt;strong>Duplicate Key Checking&lt;/strong>: Siempre activos para prevenir duplicados&lt;/li>
+&lt;/ol>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- En READ COMMITTED, esto NO usa gap locks
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">UPDATE&lt;/span> products &lt;span style="color:#66d9ef">SET&lt;/span> price &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#ae81ff">200&lt;/span> &lt;span style="color:#66d9ef">WHERE&lt;/span> category &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;electronics&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Pero esto SÍ usa gap locks (foreign key constraint)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">INSERT&lt;/span> &lt;span style="color:#66d9ef">INTO&lt;/span> order_items (product_id) &lt;span style="color:#66d9ef">VALUES&lt;/span> (&lt;span style="color:#ae81ff">999&lt;/span>);
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Verifica que product_id=999 existe y no se puede eliminar
+&lt;/span>&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="monitoring-completo-de-locks">&lt;a href="#monitoring-completo-de-locks" class="header-anchor">&lt;/a>&lt;strong>Monitoring Completo de Locks&lt;/strong>
+&lt;/h3>&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-sql" data-lang="sql">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ver todos los locks activos (no solo FOR UPDATE)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> object_schema,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> object_name,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_type,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_mode,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_status,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> lock_data,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> engine_transaction_id
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">FROM&lt;/span> performance_schema.data_locks;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ver gap locks específicamente
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span> &lt;span style="color:#f92672">*&lt;/span> &lt;span style="color:#66d9ef">FROM&lt;/span> performance_schema.data_locks
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">WHERE&lt;/span> lock_type &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;GAP&amp;#39;&lt;/span> &lt;span style="color:#66d9ef">OR&lt;/span> lock_type &lt;span style="color:#f92672">=&lt;/span> &lt;span style="color:#e6db74">&amp;#39;REC_NOT_GAP&amp;#39;&lt;/span>;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- Ver locks en espera (deadlock detection)
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SELECT&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> r.trx_id waiting_transaction,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> r.trx_mysql_thread_id waiting_thread,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> r.trx_query waiting_query,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> b.trx_id blocking_transaction,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> b.trx_mysql_thread_id blocking_thread,
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> b.trx_query blocking_query
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#66d9ef">FROM&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> information_schema.innodb_lock_waits w
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">JOIN&lt;/span> information_schema.innodb_trx b &lt;span style="color:#66d9ef">ON&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> b.trx_id &lt;span style="color:#f92672">=&lt;/span> w.blocking_trx_id
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#66d9ef">JOIN&lt;/span> information_schema.innodb_trx r &lt;span style="color:#66d9ef">ON&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> r.trx_id &lt;span style="color:#f92672">=&lt;/span> w.requesting_trx_id;
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">-- InnoDB status para análisis detallado
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e">&lt;/span>&lt;span style="color:#66d9ef">SHOW&lt;/span> ENGINE INNODB STATUS&lt;span style="color:#960050;background-color:#1e0010">\&lt;/span>&lt;span style="color:#66d9ef">G&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="recomendaciones-por-caso-de-uso">&lt;a href="#recomendaciones-por-caso-de-uso" class="header-anchor">&lt;/a>&lt;strong>Recomendaciones por Caso de Uso&lt;/strong>
+&lt;/h3>&lt;table>
+&lt;thead>
+&lt;tr>
+&lt;th>Escenario&lt;/th>
+&lt;th>Nivel Recomendado&lt;/th>
+&lt;th>Razón&lt;/th>
+&lt;/tr>
+&lt;/thead>
+&lt;tbody>
+&lt;tr>
+&lt;td>&lt;strong>E-commerce con alta concurrencia&lt;/strong>&lt;/td>
+&lt;td>READ COMMITTED&lt;/td>
+&lt;td>Menos deadlocks en INSERTs de productos/órdenes&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Sistemas financieros&lt;/strong>&lt;/td>
+&lt;td>REPEATABLE READ&lt;/td>
+&lt;td>Consistencia crítica en transferencias&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Aplicaciones con muchos INSERTs concurrentes&lt;/strong>&lt;/td>
+&lt;td>READ COMMITTED&lt;/td>
+&lt;td>Evita bloqueos por gap locks&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Reportes que requieren consistencia total&lt;/strong>&lt;/td>
+&lt;td>REPEATABLE READ o SERIALIZABLE&lt;/td>
+&lt;td>Snapshot consistente durante toda la consulta&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>&lt;strong>Sistemas de auditoría&lt;/strong>&lt;/td>
+&lt;td>SERIALIZABLE&lt;/td>
+&lt;td>Máxima consistencia&lt;/td>
+&lt;/tr>
+&lt;/tbody>
+&lt;/table>
+&lt;h2 id="referencias">&lt;a href="#referencias" class="header-anchor">&lt;/a>Referencias
+&lt;/h2>&lt;p>&lt;a class="link" href="https://engineeringatscale.substack.com/p/acid-properties-databases-explained" target="_blank" rel="noopener"
+>https://engineeringatscale.substack.com/p/acid-properties-databases-explained&lt;/a>&lt;/p>
+&lt;p>&lt;a class="link" href="https://medium.com/@aryadyas/understanding-database-transactions-how-they-work-and-where-they-matter-a00a65a94c14" target="_blank" rel="noopener"
+>https://medium.com/@aryadyas/understanding-database-transactions-how-they-work-and-where-they-matter-a00a65a94c14&lt;/a>&lt;/p>
+&lt;p>&lt;a class="link" href="https://www.thenile.dev/blog/transaction-isolation-postgres" target="_blank" rel="noopener"
+>https://www.thenile.dev/blog/transaction-isolation-postgres&lt;/a>&lt;/p>
+&lt;p>&lt;a class="link" href="https://antondevtips.com/blog/complete-guide-to-transaction-isolation-levels-in-sql" target="_blank" rel="noopener"
+>https://antondevtips.com/blog/complete-guide-to-transaction-isolation-levels-in-sql&lt;/a>&lt;/p>
+&lt;hr></description></item></channel></rss>
