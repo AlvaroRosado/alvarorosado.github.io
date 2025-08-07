@@ -35,7 +35,7 @@ INSERT INTO actor VALUES
 
 ```sql
 
-`START TRANSACTION; 
+START TRANSACTION; 
 UPDATE actor SET first_name = 'GUINESS' WHERE actor_id = 1; -- Adquiere un lock exclusivo en la fila actor_id = 1`
 
 ```
@@ -61,7 +61,11 @@ UPDATE actor SET last_name = 'GRACE' WHERE actor_id = 7;
 
 ```
 
-Ambas sesiones están esperando recursos que la otra ya posee.
+**SQL Error [1213] [40001]: (conn=6) Deadlock found when trying to get lock; try restarting transaction**
+
+**DeadLock! => Ambas sesiones están esperando recursos que la otra ya posee.**
+
+En este diagrama, se muestra el flujo:
 
 <pre class="mermaid">
 sequenceDiagram
