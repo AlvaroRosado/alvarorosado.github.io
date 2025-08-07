@@ -1,0 +1,45 @@
+baseURL = 'https://alvarorosado.es/'
+languageCode = 'es-Es'
+title = 'Álvaro Rosado'
+theme = "hugo-theme-stack"
+enableRobotsTXT = false
+capitalizeListTitles = false
+ignoreLogs = ['warning-goldmark-raw-html']
+
+[pagination]
+  pagerSize = 10
+
+[services]
+[services.googleAnalytics]
+ID = ''
+
+[params]
+description = "Focused on DDD, scalable architectures, testing, and software design best practices. Currently at Avaibook."
+mainSections = ["posts"]
+
+[params.article]
+headingAnchor = true
+
+[params.sidebar]
+subtitle = "Shipping product. Writing the best code I can :)"
+
+[params.sidebar.avatar]
+enabled = true
+local = true
+src = "img/avatar.png"
+
+## Widgets
+[[params.widgets.homepage]]
+type = "search"
+
+[[params.widgets.homepage]]
+type = "categories"
+
+[params.widgets.homepage.params]
+limit = 10
+
+[[params.widgets.homepage]]
+type = "tag-cloud"
+
+[params.widgets.homepage.params]
+limit = 20

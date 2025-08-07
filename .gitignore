@@ -1,26 +1,9 @@
-# Bundler cache
-.bundle
-vendor
+.DS_Store
+/.hugo_build.lock
+/.idea
 
-# Jekyll cache
-.jekyll-cache
-.jekyll-metadata
-_site
-
-# RubyGems
-*.gem
-
-# NPM dependencies
-node_modules
-package-lock.json
-
-# IDE configurations
-.idea
-.vscode/*
-!.vscode/settings.json
-!.vscode/extensions.json
-!.vscode/tasks.json
-
-# Misc
-_sass/vendors
-assets/js/dist
+# Build files
+/assets/jsconfig.json
+/node_modules
+/public
+/resources
