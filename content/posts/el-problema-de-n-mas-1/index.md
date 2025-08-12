@@ -382,5 +382,3 @@ Consideraciones:
 El problema N+1 puede pasar desapercibido en aplicaciones con pocos datos, pero se vuelve crítico en sistemas con gran volumen de información. 
 La sobrecarga de consultas puede ralentizar significativamente la aplicación, afectando la experiencia del usuario y la escalabilidad. 
 Abordarlo desde el inicio asegura un rendimiento óptimo a largo plazo.
-
-
