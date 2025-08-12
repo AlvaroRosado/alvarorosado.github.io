@@ -1,5 +1,5 @@
 ---
-title: transacciones
+title: Transacciones
 date: 2025-05-27 17:00:00 -0600
 categories: [Database]
 tags: []
