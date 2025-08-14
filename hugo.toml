@@ -43,3 +43,9 @@ type = "tag-cloud"
 
 [params.widgets.homepage.params]
 limit = 20
+
+[outputs]
+home = ["html", "rss"]
+section = ["html"]
+taxonomy = ["html"]
+term = ["html"]
